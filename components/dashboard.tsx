@@ -333,6 +333,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
   const [login, setLogin] = useState(false),
     [editor, setEditor] = useState(false),
     [adding, setAdding] = useState(false),
+    [deleting, setDeleting] = useState<Service | null>(null),
     [pendingAdd, setPendingAdd] = useState(false),
     [detail, setDetail] = useState<Snapshot | null>(null),
     [error, setError] = useState(""),
@@ -931,6 +932,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
               <ServiceTable
                 services={filtered}
                 onEdit={admin ? requestEdit : undefined}
+                onDelete={admin ? setDeleting : undefined}
               />
               {!filtered.length && (
                 <Empty
@@ -1150,6 +1152,18 @@ export default function Dashboard({ demo }: { demo: Store }) {
           }}
         />
       )}
+      {deleting && (
+        <DeleteService
+          store={store}
+          service={deleting}
+          onClose={() => setDeleting(null)}
+          onSaved={(data) => {
+            setStore(data);
+            setDeleting(null);
+            setToast("Услуга удалена из реестра. История сохранена.");
+          }}
+        />
+      )}
       {adding && (
         <AddService
           store={store}
@@ -1233,9 +1247,11 @@ function Empty({ title, text }: { title: string; text: string }) {
 function ServiceTable({
   services,
   onEdit,
+  onDelete,
 }: {
   services: Service[];
   onEdit?: () => void;
+  onDelete?: (service: Service) => void;
 }) {
   return (
     <div className="table-scroll">
@@ -1247,9 +1263,9 @@ function ServiceTable({
             <th>Категория</th>
             <th>Получатели</th>
             <th>Статус</th>
-            {onEdit && (
+            {(onEdit || onDelete) && (
               <th>
-                <span className="sr-only">Редактировать</span>
+                <span className="sr-only">Действия</span>
               </th>
             )}
           </tr>
@@ -1273,15 +1289,27 @@ function ServiceTable({
                   {statusLabels[s.status]}
                 </span>
               </td>
-              {onEdit && (
+              {(onEdit || onDelete) && (
                 <td>
-                  <button
-                    className="icon-button"
-                    aria-label={`Редактировать ${s.name}`}
-                    onClick={onEdit}
-                  >
-                    <Pencil size={15} />
-                  </button>
+                  {onEdit && (
+                    <button
+                      className="icon-button"
+                      aria-label={`Редактировать ${s.name}`}
+                      onClick={onEdit}
+                    >
+                      <Pencil size={15} />
+                    </button>
+                  )}
+                  {onDelete && (
+                    <button
+                      className="icon-button delete"
+                      aria-label={`Удалить услугу ${s.name}`}
+                      title="Удалить услугу"
+                      onClick={() => onDelete(s)}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                 </td>
               )}
             </tr>
@@ -1886,6 +1914,82 @@ function AddService({
           </button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+function DeleteService({
+  store,
+  service,
+  onClose,
+  onSaved,
+}: {
+  store: Store;
+  service: Service;
+  onClose: () => void;
+  onSaved: (store: Store) => void;
+}) {
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  async function remove() {
+    setError("");
+    const latest = ordered(store.snapshots).at(-1);
+    if (!latest || !store.services.some((s) => s.id === service.id)) {
+      setError("Услуга уже отсутствует. Обновите страницу.");
+      return;
+    }
+    const input = registrySaveSchema.safeParse({
+      revision: store.revision,
+      date: today(),
+      note: `Удалена услуга: ${service.name}`,
+      metrics: latest.metrics,
+      services: store.services.filter((s) => s.id !== service.id),
+    });
+    if (!input.success) {
+      setError(input.error.issues[0].message);
+      return;
+    }
+    setBusy(true);
+    try {
+      onSaved(
+        await api("/api/data", {
+          method: "POST",
+          body: JSON.stringify(input.data),
+        }),
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal title="Удалить услугу?" onClose={busy ? () => {} : onClose}>
+      <div className="modal-body">
+        <strong>{service.name}</strong>
+        <p className="muted">
+          Услуга будет удалена из текущего реестра. Расчётные показатели
+          обновятся, а «Заявлено» и «На портале» останутся прежними. Предыдущие
+          отчёты сохранятся в истории.
+        </p>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+      <div className="modal-footer">
+        <button className="secondary" disabled={busy} onClick={onClose}>
+          Отмена
+        </button>
+        <button
+          className="primary danger-action"
+          disabled={busy}
+          onClick={remove}
+        >
+          {busy ? "Удаление…" : "Удалить услугу"}
+        </button>
+      </div>
     </Modal>
   );
 }

@@ -700,3 +700,47 @@ test("not-working status has its own count and transitions without changing manu
   };
   assert.equal(compare([a, b], b.date, b.date).delta?.notWorking, -1);
 });
+
+test("deleting the last service clears derived totals and preserves facts and prior history", () => {
+  const service: Service = {
+    id: "remove-me",
+    name: "Удаляемая услуга",
+    audience: "both",
+    status: "notWorking",
+  };
+  const first = registrySaveSchema.parse({
+    ...input(),
+    metrics: { declared: 116, portal: 49 },
+    services: [service],
+  });
+  const old = applySave(
+    { revision: 0, services: [], snapshots: [] },
+    first,
+    "first",
+    new Date().toISOString(),
+  );
+  const deletion = registrySaveSchema.parse({
+    ...first,
+    revision: 1,
+    note: "Удалена услуга",
+    services: [],
+  });
+  const next = applySave(old, deletion, "second", new Date().toISOString());
+  assert.equal(next.services.length, 0);
+  assert.equal(next.snapshots.length, 2);
+  assert.equal(old.services.length, 1);
+  assert.equal(next.snapshots[0].services[0].id, "remove-me");
+  assert.deepEqual(visibleMetrics(next.snapshots[1].metrics), {
+    declared: 116,
+    portal: 49,
+    working: 0,
+    notWorking: 0,
+    individual: 0,
+    business: 0,
+    both: 0,
+  });
+  assert.throws(
+    () => applySave(next, deletion, "stale", new Date().toISOString()),
+    /CONFLICT/,
+  );
+});

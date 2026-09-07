@@ -2117,3 +2117,11 @@ td,
   color: #a33e35;
   background: #fff0ee;
 }
+
+.primary.danger-action {
+  background: #a33e35;
+  border-color: #a33e35;
+}
+.primary.danger-action:hover {
+  background: #882e26;
+}
