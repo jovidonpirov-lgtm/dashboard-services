@@ -1090,7 +1090,7 @@ tbody tr:hover {
 }
 .history-metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 16px 24px;
   gap: 15px;
 }
@@ -1260,7 +1260,7 @@ tbody tr:hover {
 }
 .form-metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 15px;
 }
 .form-metrics .field {

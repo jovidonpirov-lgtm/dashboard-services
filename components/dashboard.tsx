@@ -38,6 +38,7 @@ import {
 import {
   asOf,
   adjustServiceTotals,
+  audienceBreakdown,
   audienceLabels,
   compare,
   dateLabel,
@@ -58,6 +59,7 @@ const zero: Metrics = {
   working: 0,
   individual: 0,
   business: 0,
+  both: 0,
 };
 const number = (value: number | null | undefined) =>
   value == null ? "—" : value.toLocaleString("ru-RU");
@@ -69,6 +71,7 @@ const metricLabels: Record<keyof Metrics, string> = {
   working: "Работают",
   individual: "Физ",
   business: "Юр",
+  both: "Из них для физ и юр",
 };
 const sections = {
   overview: "Обзор",
@@ -548,8 +551,9 @@ export default function Dashboard({ demo }: { demo: Store }) {
           {section === "overview" && (
             <>
               <section className="metrics" aria-label="Основные показатели">
-                {(Object.keys(metricLabels) as (keyof Metrics)[]).map(
-                  (key, i) => {
+                {(Object.keys(metricLabels) as (keyof Metrics)[])
+                  .filter((key) => key !== "both")
+                  .map((key, i) => {
                     const Icon = [
                       Layers3,
                       Globe,
@@ -585,8 +589,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
                         )}
                       </article>
                     );
-                  },
-                )}
+                  })}
               </section>
               <div className="analytics-grid">
                 <section className="panel trend-panel">
@@ -729,39 +732,43 @@ export default function Dashboard({ demo }: { demo: Store }) {
                     </div>
                     <UsersRound className="muted" size={20} />
                   </div>
-                  {(["individual", "business"] as const).map((key, i) => {
-                    const share = metrics.declared
-                      ? Math.round((metrics[key] / metrics.declared) * 100)
-                      : 0;
-                    return (
-                      <div className="audience-row" key={key}>
-                        <div className={`audience-icon ${i ? "blue" : ""}`}>
-                          {i ? (
-                            <Building2 size={20} />
-                          ) : (
-                            <UsersRound size={20} />
-                          )}
-                        </div>
-                        <div className="audience-info">
-                          <div>
-                            <strong>
-                              {i ? "Юридические лица" : "Физические лица"}
-                            </strong>
-                            <span>
-                              {number(metrics[key])} <small>· {share}%</small>
-                            </span>
+                  {audienceBreakdown(metrics).map(
+                    ({ key, label, value }, i) => {
+                      const share =
+                        value == null
+                          ? null
+                          : metrics.declared
+                            ? Math.round((value / metrics.declared) * 100)
+                            : 0;
+                      return (
+                        <div className="audience-row" key={key}>
+                          <div className={`audience-icon ${i ? "blue" : ""}`}>
+                            {i ? (
+                              <Building2 size={20} />
+                            ) : (
+                              <UsersRound size={20} />
+                            )}
                           </div>
-                          <div className={`audience-bar ${i ? "blue" : ""}`}>
-                            <span style={{ width: `${share}%` }} />
+                          <div className="audience-info">
+                            <div>
+                              <strong>{label}</strong>
+                              <span>
+                                {number(value)}{" "}
+                                {share != null && <small>· {share}%</small>}
+                              </span>
+                            </div>
+                            <div className={`audience-bar ${i ? "blue" : ""}`}>
+                              <span style={{ width: `${share ?? 0}%` }} />
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    },
+                  )}
                   <p className="footnote">
-                    Услуга «Физ и юр» входит в обе группы, но в общем количестве
-                    считается один раз. Проценты — от заявленных услуг;
-                    аудитории можно заполнять постепенно.
+                    {metrics.both == null
+                      ? "Укажите «Из них для физ и юр» в общих цифрах, чтобы увидеть три группы. В этом отчёте пересечение ещё не задано."
+                      : "Три группы не пересекаются. Верхние показатели Физ и Юр включают общие услуги. Проценты — от заявленных услуг."}
                   </p>
                 </section>
                 <section className="panel recent-panel">
@@ -1345,7 +1352,7 @@ function Editor({
               <label key={key} className="field">
                 {metricLabels[key]}
                 <input
-                  required
+                  required={key !== "both"}
                   type="number"
                   min="0"
                   max="1000000"
@@ -1355,7 +1362,11 @@ function Editor({
                     setMetrics((m) => ({
                       ...m,
                       [key]:
-                        e.target.value === "" ? NaN : Number(e.target.value),
+                        e.target.value === ""
+                          ? key === "both"
+                            ? null
+                            : NaN
+                          : Number(e.target.value),
                     }));
                     setDirty(true);
                   }}
@@ -1364,10 +1375,12 @@ function Editor({
             ))}
           </div>
           <p className="footnote">
-            Все пять итогов можно редактировать вручную. Новая услуга
-            прибавляется к этим цифрам автоматически. Существующие услуги уже
-            учтены и повторно не суммируются. Аудитории можно заполнять
-            постепенно: их сумма не обязана равняться заявленным услугам.
+            «Из них для физ и юр» — услуги, входящие в оба показателя. Укажите
+            0, если общих нет; оставьте пустым, если число пока неизвестно. Все
+            пять итогов можно редактировать вручную. Новая услуга прибавляется к
+            этим цифрам автоматически. Существующие услуги уже учтены и повторно
+            не суммируются. Аудитории можно заполнять постепенно: их сумма не
+            обязана равняться заявленным услугам.
           </p>
           <div className="editor-section-heading">
             <h3>

@@ -29,6 +29,7 @@ test("local persistence is durable and rejects competing revisions", async () =>
         working: 0,
         individual: 0,
         business: 0,
+        both: null,
       },
       services: [],
     };

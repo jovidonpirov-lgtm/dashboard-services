@@ -35,12 +35,23 @@ export const metricsSchema = z
     working: count,
     individual: count,
     business: count,
+    both: count.nullable().default(null),
   })
   .refine(
     (m) =>
       m.portal === null || (m.working <= m.portal && m.portal <= m.declared),
     {
       message: "Работают ≤ На портале ≤ Заявлено услуг.",
+    },
+  )
+  .refine(
+    (m) =>
+      m.both == null ||
+      (m.both <= Math.min(m.individual, m.business) &&
+        m.individual + m.business - m.both <= m.declared),
+    {
+      message:
+        "Общих услуг не может быть больше Физ или Юр; уникальных услуг по аудиториям — больше заявленных.",
     },
   )
   .refine((m) => m.working <= m.declared, {
@@ -52,13 +63,14 @@ export const metricsSchema = z
 export type Metrics = z.infer<typeof metricsSchema>;
 export function serviceContribution(
   service?: Service,
-): Omit<Metrics, "portal"> & { portal: number } {
+): Record<keyof Metrics, number> {
   return {
     declared: service ? 1 : 0,
     portal: service && ["working", "portal"].includes(service.status) ? 1 : 0,
     working: service?.status === "working" ? 1 : 0,
     individual: service && service.audience !== "business" ? 1 : 0,
     business: service && service.audience !== "individual" ? 1 : 0,
+    both: service?.audience === "both" ? 1 : 0,
   };
 }
 // Apply only the edited service's difference; existing totals already include the registry.
@@ -100,6 +112,16 @@ export const saveSchema = z
     services: z.array(serviceSchema).max(10000),
   })
   .superRefine((data, ctx) => {
+    if (
+      data.metrics.both != null &&
+      data.services.filter((s) => s.audience === "both").length >
+        data.metrics.both
+    )
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "В реестре больше общих услуг, чем указано в поле «Из них для физ и юр».",
+      });
     if (
       data.metrics.portal != null &&
       data.services.filter(
@@ -201,6 +223,10 @@ export function compare(snapshots: Snapshot[], from: string, to: string) {
             working: end.metrics.working - baseline.metrics.working,
             individual: end.metrics.individual - baseline.metrics.individual,
             business: end.metrics.business - baseline.metrics.business,
+            both:
+              end.metrics.both != null && baseline.metrics.both != null
+                ? end.metrics.both - baseline.metrics.both
+                : null,
           }
         : null,
   };
@@ -228,4 +254,20 @@ export function applySave(
     snapshots,
     services: ordered(snapshots).at(-1)!.services,
   };
+}
+
+export function audienceBreakdown(metrics: Metrics) {
+  return [
+    {
+      key: "individual",
+      label: "Только физлица",
+      value: metrics.both == null ? null : metrics.individual - metrics.both,
+    },
+    {
+      key: "business",
+      label: "Только юрлица",
+      value: metrics.both == null ? null : metrics.business - metrics.both,
+    },
+    { key: "both", label: "Физлица и юрлица", value: metrics.both ?? null },
+  ];
 }

@@ -55,6 +55,7 @@ export function demoStore(): Store {
         portal: 210 + Math.floor(i * 2),
         working,
         individual: 175 + Math.floor(i * 1.1),
+        both: 0,
         business: 85 + Math.floor(i * 0.7),
       },
       services,
@@ -62,6 +63,7 @@ export function demoStore(): Store {
   });
   // Audiences may overlap, so ensure all declared services are covered.
   for (const s of snapshots)
-    s.metrics.business = s.metrics.declared - s.metrics.individual;
+    s.metrics.business = s.metrics.declared - s.metrics.individual + 20;
+  for (const s of snapshots) s.metrics.both = 20;
   return { revision: 0, services, snapshots };
 }

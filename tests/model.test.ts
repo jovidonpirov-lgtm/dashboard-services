@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   applySave,
   adjustServiceTotals,
+  audienceBreakdown,
   type Service,
   asOf,
   compare,
@@ -22,14 +23,28 @@ const snapshot = (
   date,
   createdAt,
   note: "Обновление",
-  metrics: { declared: 10, portal: 10, working, individual: 6, business: 4 },
+  metrics: {
+    declared: 10,
+    portal: 10,
+    working,
+    individual: 6,
+    business: 4,
+    both: null,
+  },
   services: [],
 });
 const input = () => ({
   revision: 0,
   date: today(),
   note: "Первый отчёт",
-  metrics: { declared: 10, portal: 10, working: 2, individual: 6, business: 4 },
+  metrics: {
+    declared: 10,
+    portal: 10,
+    working: 2,
+    individual: 6,
+    business: 4,
+    both: null,
+  },
   services: [],
 });
 test("Dushanbe calendar changes at 19:00 UTC", () => {
@@ -113,10 +128,38 @@ test("backdated entry cannot replace present-day registry", () => {
 });
 test("negative, fractional and impossible metrics rejected", () => {
   for (const metrics of [
-    { declared: 10, portal: 10, working: 11, individual: 6, business: 4 },
-    { declared: -1, portal: 0, working: 0, individual: 0, business: 0 },
-    { declared: 10, portal: 10, working: 1.5, individual: 6, business: 4 },
-    { declared: 10, portal: 10, working: 1, individual: 11, business: 4 },
+    {
+      declared: 10,
+      portal: 10,
+      working: 11,
+      individual: 6,
+      business: 4,
+      both: null,
+    },
+    {
+      declared: -1,
+      portal: 0,
+      working: 0,
+      individual: 0,
+      business: 0,
+      both: null,
+    },
+    {
+      declared: 10,
+      portal: 10,
+      working: 1.5,
+      individual: 6,
+      business: 4,
+      both: null,
+    },
+    {
+      declared: 10,
+      portal: 10,
+      working: 1,
+      individual: 11,
+      business: 4,
+      both: null,
+    },
   ])
     assert.equal(saveSchema.safeParse({ ...input(), metrics }).success, false);
 });
@@ -130,6 +173,7 @@ test("overlapping audiences accepted", () =>
         working: 2,
         individual: 8,
         business: 6,
+        both: null,
       },
     }).success,
     true,
@@ -164,6 +208,7 @@ test("registry may be partial but cannot exceed manual totals", () => {
         working: 0,
         individual: 0,
         business: 0,
+        both: null,
       },
       services: [
         { id: "1", name: "Услуга", audience: "individual", status: "planned" },
@@ -207,6 +252,7 @@ test("nonworking registry cannot contradict reported working total", () =>
         working: 1,
         individual: 1,
         business: 0,
+        both: null,
       },
       services: [
         {
@@ -253,6 +299,7 @@ test("individual services accumulate on manual totals without recounting existin
     working: 6,
     individual: 5,
     business: 5,
+    both: null,
   };
   const service: Service = {
     id: "new",
@@ -267,6 +314,7 @@ test("individual services accumulate on manual totals without recounting existin
     working: 7,
     individual: 6,
     business: 5,
+    both: null,
   });
   assert.deepEqual(
     adjustServiceTotals(added, service, { ...service, name: "Другое имя" }),
@@ -284,13 +332,21 @@ test("individual services accumulate on manual totals without recounting existin
     working: 6,
     individual: 6,
     business: 6,
+    both: null,
   });
   assert.deepEqual(
     adjustServiceTotals({ ...added, declared: 100 }, service, {
       ...service,
       status: "planned",
     }),
-    { declared: 100, portal: 8, working: 6, individual: 6, business: 5 },
+    {
+      declared: 100,
+      portal: 8,
+      working: 6,
+      individual: 6,
+      business: 5,
+      both: null,
+    },
   );
 });
 test("adding services leaves missing historical portal counts unknown", () => {
@@ -301,7 +357,14 @@ test("adding services leaves missing historical portal counts unknown", () => {
     status: "portal",
   };
   const added = adjustServiceTotals(
-    { declared: 10, portal: null, working: 2, individual: 5, business: 5 },
+    {
+      declared: 10,
+      portal: null,
+      working: 2,
+      individual: 5,
+      business: 5,
+      both: null,
+    },
     undefined,
     service,
   );
@@ -320,6 +383,7 @@ test("partial audience figures from the report can be saved", () => {
         working: 36,
         individual: 10,
         business: 26,
+        both: null,
       },
     }).success,
     true,
@@ -333,7 +397,14 @@ test("both audiences count once in service totals and once in each audience", ()
     status: "working",
   };
   const metrics = adjustServiceTotals(
-    { declared: 0, portal: 0, working: 0, individual: 0, business: 0 },
+    {
+      declared: 0,
+      portal: 0,
+      working: 0,
+      individual: 0,
+      business: 0,
+      both: null,
+    },
     undefined,
     service,
   );
@@ -343,9 +414,57 @@ test("both audiences count once in service totals and once in each audience", ()
     working: 1,
     individual: 1,
     business: 1,
+    both: null,
   });
   assert.equal(
     saveSchema.safeParse({ ...input(), metrics, services: [service] }).success,
     true,
   );
+});
+
+test("audience groups partition overlapping totals without double counting", () => {
+  const metrics = {
+    declared: 36,
+    portal: 36,
+    working: 36,
+    individual: 16,
+    business: 26,
+    both: 6,
+  };
+  assert.deepEqual(
+    audienceBreakdown(metrics).map((g) => g.value),
+    [10, 20, 6],
+  );
+  assert.equal(saveSchema.safeParse({ ...input(), metrics }).success, true);
+  for (const both of [-1, 17, 5, 1.5]) {
+    assert.equal(
+      saveSchema.safeParse({ ...input(), metrics: { ...metrics, both } })
+        .success,
+      false,
+    );
+  }
+  assert.deepEqual(
+    audienceBreakdown({ ...metrics, both: null }).map((g) => g.value),
+    [null, null, null],
+  );
+  const service: Service = {
+    id: "both",
+    name: "Общая услуга",
+    audience: "both",
+    status: "working",
+  };
+  const next = adjustServiceTotals(metrics, undefined, service);
+  assert.equal(next.both, 7);
+  assert.deepEqual(
+    audienceBreakdown(next).map((g) => g.value),
+    [10, 20, 7],
+  );
+  assert.deepEqual(adjustServiceTotals(next, service, undefined), metrics);
+  const a = snapshot("2026-09-01", 2),
+    b = snapshot("2026-09-02", 3);
+  a.metrics.both = 1;
+  b.metrics.both = 3;
+  assert.equal(compare([a, b], b.date, b.date).delta?.both, 2);
+  a.metrics.both = null;
+  assert.equal(compare([a, b], b.date, b.date).delta?.both, null);
 });
