@@ -81,8 +81,8 @@ try {
   assert.ok(ready, "Server ready");
   assert.equal((await request("/")).status, 200);
   ok("production page responds");
-  assert.equal((await request("/api/data")).status, 401);
-  ok("private data requires login");
+  assert.equal((await request("/api/data")).status, 200);
+  ok("current data is public without login");
   assert.equal(
     (
       await request(
@@ -299,7 +299,7 @@ try {
   }
   const forged = cookie.slice(0, -1) + (cookie.endsWith("a") ? "b" : "a");
   assert.equal(
-    (await request("/api/data", "GET", undefined, forged)).status,
+    (await request("/api/data", "POST", payload, forged)).status,
     401,
   );
   ok("forged session rejected");

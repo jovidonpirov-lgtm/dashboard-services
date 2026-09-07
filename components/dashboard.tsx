@@ -342,15 +342,18 @@ function Trend({
   );
 }
 export default function Dashboard({
-  demo,
   localPreview = false,
 }: {
-  demo: Store;
   localPreview?: boolean;
 }) {
-  const [store, setStore] = useState<Store>(demo),
+  const [store, setStore] = useState<Store>({
+      revision: 0,
+      services: [],
+      snapshots: [],
+    }),
     [admin, setAdmin] = useState(false),
     [ready, setReady] = useState(false),
+    [hasData, setHasData] = useState(false),
     [section, updateSection] = useState<Section>("overview");
   const [login, setLogin] = useState(false),
     [editor, setEditor] = useState(false),
@@ -375,14 +378,15 @@ export default function Dashboard({
     [category, setCategory] = useState("all");
   useEffect(() => {
     let active = true;
-    api("/api/auth")
-      .then(async (auth) => {
-        if (auth.admin) {
-          const data = await api("/api/data");
-          if (active) {
-            setStore(data);
-            setAdmin(true);
-          }
+    Promise.all([
+      api("/api/data"),
+      api("/api/auth").catch(() => ({ admin: false })),
+    ])
+      .then(([data, auth]) => {
+        if (active) {
+          setStore(data);
+          setAdmin(auth.admin);
+          setHasData(true);
         }
       })
       .catch((e) => {
@@ -400,20 +404,23 @@ export default function Dashboard({
     const timer = setTimeout(() => setToast(""), 5000);
     return () => clearTimeout(timer);
   }, [toast]);
-  const visibleData = useRef({ store, demo: !admin });
+  const visibleData = useRef({ store, demo: localPreview });
   useEffect(() => {
     visibleData.current = {
       store: { ...store, snapshots: analysisSnapshots(store.snapshots) },
-      demo: !admin,
+      demo: localPreview,
     };
-  }, [store, admin]);
+  }, [store, localPreview]);
   useEffect(
     () =>
-      registerAnalysisTools(
-        (document as Document & { modelContext?: ModelContext }).modelContext,
-        () => visibleData.current,
-      ),
-    [],
+      hasData
+        ? registerAnalysisTools(
+            (document as Document & { modelContext?: ModelContext })
+              .modelContext,
+            () => visibleData.current,
+          )
+        : undefined,
+    [hasData],
   );
   useEffect(() => {
     const restore = () => {
@@ -480,9 +487,8 @@ export default function Dashboard({
     try {
       await api("/api/auth", { method: "DELETE" });
       setAdmin(false);
-      setStore(demo);
       setSection("overview");
-      setToast("Вы вышли из аккаунта. Открыт демонстрационный обзор.");
+      setToast("Вы вышли из аккаунта. Просмотр данных остаётся доступным.");
     } catch (e) {
       setError((e as Error).message);
     }
@@ -501,6 +507,22 @@ export default function Dashboard({
       setLogin(true);
     }
   };
+  if (!hasData)
+    return (
+      <main className="public-files" aria-busy={!ready}>
+        <h1>Аналитика услуг</h1>
+        {error ? (
+          <div className="error" role="alert">
+            <p>Не удалось загрузить актуальные данные. Попробуйте ещё раз.</p>
+            <button className="secondary" onClick={() => location.reload()}>
+              Повторить загрузку
+            </button>
+          </div>
+        ) : (
+          <p role="status">Загружаем актуальные данные…</p>
+        )}
+      </main>
+    );
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -556,9 +578,9 @@ export default function Dashboard({
             className="profile"
             onClick={() => (admin ? logout() : setLogin(true))}
           >
-            <span className="avatar">{admin ? "А" : "Д"}</span>
+            <span className="avatar">{admin ? "А" : "Г"}</span>
             <span>
-              <strong>{admin ? "Администратор" : "Демонстрация"}</strong>
+              <strong>{admin ? "Администратор" : "Режим просмотра"}</strong>
               <small>
                 {admin ? "Управление данными" : "Войти для редактирования"}
               </small>
@@ -632,20 +654,6 @@ export default function Dashboard({
               </button>
             </div>
           </div>
-          {!admin && (
-            <div className="demo-banner">
-              <span>
-                <CircleHelp size={17} />
-                <strong>Демонстрационные данные</strong>
-                <span>
-                  Пример дашборда. Реальные показатели доступны после входа.
-                </span>
-              </span>
-              <button onClick={() => setLogin(true)}>
-                Войти <ArrowRight size={15} />
-              </button>
-            </div>
-          )}
           {error && (
             <div className="error" role="alert">
               {error}
@@ -984,10 +992,7 @@ export default function Dashboard({
                         </div>
                         <div>
                           <strong>{s.note}</strong>
-                          <span>
-                            {dateLabel(s.date)} ·{" "}
-                            {admin ? "Администратор" : "Пример отчёта"}
-                          </span>
+                          <span>{dateLabel(s.date)} · Администратор</span>
                         </div>
                         <ChevronRight size={16} />
                       </button>
@@ -1106,9 +1111,7 @@ export default function Dashboard({
                 services={filtered}
                 onEdit={admin ? setEditingService : undefined}
                 onDelete={admin ? setDeleting : undefined}
-                onFiles={
-                  admin ? (service) => setFileService({ service }) : undefined
-                }
+                onFiles={(service) => setFileService({ service })}
               />
               {!filtered.length && (
                 <Empty
@@ -1635,7 +1638,7 @@ function Login({
           <LockKeyhole size={28} />
         </div>
         <p className="muted">
-          Войдите, чтобы просматривать реальные данные, добавлять услуги и
+          Войдите, чтобы добавлять и изменять услуги, прикреплять файлы и
           сохранять отчёты.
         </p>
         <label className="field">

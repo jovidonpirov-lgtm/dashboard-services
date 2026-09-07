@@ -4,11 +4,6 @@ import { readStore, saveStore } from "@/lib/storage";
 import { registrySaveSchema, registryStore } from "@/lib/model";
 export const dynamic = "force-dynamic";
 export async function GET() {
-  if (!(await isAdmin()))
-    return NextResponse.json(
-      { error: "Войдите как администратор." },
-      { status: 401 },
-    );
   try {
     return NextResponse.json(registryStore(await readStore()), {
       headers: { "Cache-Control": "no-store" },

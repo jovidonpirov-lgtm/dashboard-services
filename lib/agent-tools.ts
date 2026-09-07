@@ -20,7 +20,7 @@ const periodSchema = z
     (v) => v.from <= v.to,
     "Дата начала должна быть не позже даты окончания.",
   );
-/** Exposes only the currently visible dataset: examples for guests, real data after login. */
+/** Exposes the public dataset; isolated local previews are explicitly marked. */
 export function registerAnalysisTools(
   context: ModelContext | undefined,
   read: () => { store: Store; demo: boolean },
