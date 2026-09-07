@@ -551,15 +551,15 @@ export default function Dashboard({ demo }: { demo: Store }) {
           {section === "overview" && (
             <>
               <section className="metrics" aria-label="Основные показатели">
-                {(Object.keys(metricLabels) as (keyof Metrics)[])
-                  .filter((key) => key !== "both")
-                  .map((key, i) => {
+                {(Object.keys(metricLabels) as (keyof Metrics)[]).map(
+                  (key, i) => {
                     const Icon = [
                       Layers3,
                       Globe,
                       CheckCheck,
                       UsersRound,
                       Building2,
+                      UsersRound,
                     ][i];
                     return (
                       <article
@@ -567,7 +567,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
                         className={`metric-card ${key === "working" ? "featured" : ""}`}
                       >
                         <div className="metric-label">
-                          {metricLabels[key]}
+                          {key === "both" ? "Физ/Юр" : metricLabels[key]}
                           <span className="metric-icon">
                             <Icon size={19} />
                           </span>
@@ -589,7 +589,8 @@ export default function Dashboard({ demo }: { demo: Store }) {
                         )}
                       </article>
                     );
-                  })}
+                  },
+                )}
               </section>
               <div className="analytics-grid">
                 <section className="panel trend-panel">

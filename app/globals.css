@@ -465,7 +465,7 @@ main {
 }
 .metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 17px;
   margin-bottom: 24px;
 }
@@ -1439,6 +1439,7 @@ tbody tr:hover {
     display: none;
   }
   .metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 11px;
   }
   .metric-card {
@@ -1686,6 +1687,7 @@ tbody tr:hover {
     font-size: 12px;
   }
   .metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 11px;
     margin-bottom: 17px;
   }
