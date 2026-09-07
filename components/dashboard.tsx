@@ -10,6 +10,7 @@ import {
   Activity,
   Paperclip,
   Globe,
+  ArrowLeft,
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
@@ -38,7 +39,9 @@ import {
 } from "lucide-react";
 import {
   asOf,
-  registryMetrics,
+  currentRegistryMetrics as registryMetrics,
+  paymentBreakdown,
+  analysisSnapshots,
   metricFilters,
   matchesRegistryFilters,
   registrySaveSchema,
@@ -125,6 +128,7 @@ function Modal({
   return (
     <dialog
       ref={ref}
+      aria-label={title}
       className={`modal ${wide ? "wide" : ""}`}
       onCancel={(e) => {
         e.preventDefault();
@@ -132,6 +136,14 @@ function Modal({
       }}
     >
       <div className="modal-head">
+        <button
+          type="button"
+          className="icon-button"
+          onClick={onClose}
+          aria-label="Назад"
+        >
+          <ArrowLeft size={20} />
+        </button>
         <h2>{title}</h2>
         <button className="icon-button" onClick={onClose} aria-label="Закрыть">
           <X size={20} />
@@ -144,19 +156,21 @@ function Modal({
 function Change({
   value,
   label = "за период",
+  inverse = false,
 }: {
   value: number | null;
   label?: string;
+  inverse?: boolean;
 }) {
   return (
     <span
-      className={`change ${value === null ? "neutral" : value < 0 ? "negative" : ""}`}
+      className={`change ${value === null || value === 0 ? "neutral" : (inverse ? value > 0 : value < 0) ? "negative" : ""}`}
     >
       {value === null ? (
         "Нет базы сравнения"
       ) : (
         <>
-          {value < 0 ? (
+          {value === 0 ? null : value < 0 ? (
             <ArrowDownRight size={14} />
           ) : (
             <ArrowUpRight size={14} />
@@ -289,10 +303,7 @@ function Trend({
             onMouseEnter={() => setHover(i)}
           >
             <title>
-              {dateLabel(p.date)}:{" "}
-              {p.snapshot
-                ? `${p.snapshot.metrics.working} работают / ${p.snapshot.metrics.declared} заявлено`
-                : "Нет отчёта"}
+              {`${dateLabel(p.date)}: ${p.snapshot ? `${p.snapshot.metrics.working} работают / ${p.snapshot.metrics.declared} заявлено` : "Нет отчёта"}`}
             </title>
           </rect>
         ))}
@@ -330,14 +341,22 @@ function Trend({
     </div>
   );
 }
-export default function Dashboard({ demo }: { demo: Store }) {
+export default function Dashboard({
+  demo,
+  localPreview = false,
+}: {
+  demo: Store;
+  localPreview?: boolean;
+}) {
   const [store, setStore] = useState<Store>(demo),
     [admin, setAdmin] = useState(false),
     [ready, setReady] = useState(false),
-    [section, setSection] = useState<Section>("overview");
+    [section, updateSection] = useState<Section>("overview");
   const [login, setLogin] = useState(false),
     [editor, setEditor] = useState(false),
     [adding, setAdding] = useState(false),
+    [editingService, setEditingService] = useState<Service | null>(null),
+    [pendingEdit, setPendingEdit] = useState(false),
     [deleting, setDeleting] = useState<Service | null>(null),
     [fileService, setFileService] = useState<{
       service: Service;
@@ -383,7 +402,10 @@ export default function Dashboard({ demo }: { demo: Store }) {
   }, [toast]);
   const visibleData = useRef({ store, demo: !admin });
   useEffect(() => {
-    visibleData.current = { store, demo: !admin };
+    visibleData.current = {
+      store: { ...store, snapshots: analysisSnapshots(store.snapshots) },
+      demo: !admin,
+    };
   }, [store, admin]);
   useEffect(
     () =>
@@ -393,24 +415,54 @@ export default function Dashboard({ demo }: { demo: Store }) {
       ),
     [],
   );
+  useEffect(() => {
+    const restore = () => {
+      const value = window.location.hash.slice(1);
+      updateSection(
+        value === "services" || value === "history" ? value : "overview",
+      );
+    };
+    restore();
+    window.addEventListener("hashchange", restore);
+    return () => window.removeEventListener("hashchange", restore);
+  }, []);
+  function setSection(next: Section) {
+    updateSection(next);
+    window.location.hash = next;
+  }
+  const [payment, setPayment] = useState("all");
+  function resetFilters() {
+    setQuery("");
+    setStatus("all");
+    setAudience("all");
+    setCategory("all");
+    setPayment("all");
+  }
   const latest = ordered(store.snapshots).at(-1),
-    metrics = latest?.metrics ?? zero,
+    metrics = registryMetrics(latest?.metrics ?? zero, store.services),
     currentDate = today(),
     isFresh = latest?.date === currentDate;
-  const daily = compare(store.snapshots, currentDate, currentDate),
-    period = from <= to ? compare(store.snapshots, from, to) : null;
+  const calculatedSnapshots = analysisSnapshots(store.snapshots);
+  const payments = paymentBreakdown(store.services);
+  const daily = compare(calculatedSnapshots, currentDate, currentDate),
+    period = from <= to ? compare(calculatedSnapshots, from, to) : null;
   const completion = metrics.declared
     ? Math.round((metrics.working / metrics.declared) * 100)
     : 0;
   const filtered = store.services.filter(
     (s) =>
-      (s.name + " " + s.id).toLowerCase().includes(query.toLowerCase()) &&
+      (s.name + " " + s.id)
+        .toLowerCase()
+        .includes(query.trim().toLowerCase()) &&
+      (payment === "all" ||
+        (payment === "unknown" ? !s.payment : s.payment === payment)) &&
       matchesRegistryFilters(s, status, audience) &&
       (category === "all" ||
         (category === "none" ? !s.category : s.category === category)),
   );
   function openMetric(key: keyof Metrics) {
     const filters = metricFilters(key);
+    setPayment("all");
     setQuery("");
     setCategory("all");
     setStatus(filters.status);
@@ -442,7 +494,13 @@ export default function Dashboard({ demo }: { demo: Store }) {
       setLogin(true);
     }
   };
-  const requestEdit = () => (admin ? setEditor(true) : setLogin(true));
+  const requestEdit = () => {
+    if (admin) setEditor(true);
+    else {
+      setPendingEdit(true);
+      setLogin(true);
+    }
+  };
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -512,7 +570,15 @@ export default function Dashboard({ demo }: { demo: Store }) {
       <div className="main-shell">
         <header className="topbar">
           <div className="breadcrumb">
-            Рабочее пространство <ChevronRight size={14} />
+            {section !== "overview" && (
+              <button
+                className="back-button"
+                onClick={() => setSection("overview")}
+              >
+                <ArrowLeft size={17} /> К обзору
+              </button>
+            )}
+            <ChevronRight size={14} />
             <strong>{sections[section]}</strong>
           </div>
           <div className="topbar-right">
@@ -521,6 +587,12 @@ export default function Dashboard({ demo }: { demo: Store }) {
           </div>
         </header>
         <main>
+          {localPreview && (
+            <p className="local-review-banner">
+              Локальная проверка · Тестовые данные. Рабочий сайт и база не
+              изменяются.
+            </p>
+          )}
           <div className="page-heading">
             <div>
               <div className="eyebrow">МОНИТОРИНГ УСЛУГ</div>
@@ -654,6 +726,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
                         <Change
                           value={daily.delta?.[key] ?? null}
                           label="за сегодня"
+                          inverse={key === "notWorking"}
                         />
                         {key === "working" && (
                           <div className="mini-progress">
@@ -664,6 +737,44 @@ export default function Dashboard({ demo }: { demo: Store }) {
                     );
                   },
                 )}
+                <article
+                  className="metric-card payment-card"
+                  aria-label="Оплата услуг"
+                >
+                  <div className="metric-label">
+                    Оплата услуг
+                    <span className="metric-icon">
+                      <Layers3 size={19} />
+                    </span>
+                  </div>
+                  <div className="payment-totals">
+                    {(["paid", "free"] as const).map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        aria-label={`Просмотреть ${value === "paid" ? "платные" : "бесплатные"} услуги`}
+                        onClick={() => {
+                          resetFilters();
+                          setPayment(value);
+                          setSection("services");
+                        }}
+                      >
+                        <strong>{number(payments[value])}</strong>
+                        <span>{value === "paid" ? "Платно" : "Бесплатно"}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    className="payment-unknown"
+                    onClick={() => {
+                      resetFilters();
+                      setPayment("unknown");
+                      setSection("services");
+                    }}
+                  >
+                    Не указано: {number(payments.unknown)}
+                  </button>
+                </article>
               </section>
               <div className="analytics-grid">
                 <section className="panel trend-panel">
@@ -739,7 +850,11 @@ export default function Dashboard({ demo }: { demo: Store }) {
                     </div>
                   </div>
                   {from && to && from <= to ? (
-                    <Trend snapshots={store.snapshots} from={from} to={to} />
+                    <Trend
+                      snapshots={calculatedSnapshots}
+                      from={from}
+                      to={to}
+                    />
                   ) : (
                     <p className="empty-small">Укажите корректный период.</p>
                   )}
@@ -954,17 +1069,42 @@ export default function Dashboard({ demo }: { demo: Store }) {
                   ))}
                 </select>
               </div>
+              <div className="filter-summary">
+                <span>
+                  Найдено <strong>{filtered.length}</strong> из{" "}
+                  {store.services.length}
+                </span>
+                <select
+                  aria-label="Оплата услуги"
+                  value={payment}
+                  onChange={(e) => setPayment(e.target.value)}
+                >
+                  <option value="all">Любая оплата</option>
+                  <option value="free">Бесплатно</option>
+                  <option value="paid">Платно</option>
+                  <option value="unknown">Оплата не указана</option>
+                </select>
+                {(query ||
+                  status !== "all" ||
+                  audience !== "all" ||
+                  category !== "all" ||
+                  payment !== "all") && (
+                  <button className="back-button" onClick={resetFilters}>
+                    <X size={15} />
+                    Сбросить фильтры
+                  </button>
+                )}
+              </div>
               {(status === "onPortal" ||
                 (status === "all" && audience === "all")) && (
                 <p className="registry-note">
-                  Показаны услуги, добавленные в реестр. Ручные показатели
-                  «Заявлено» и «На портале» могут быть больше количества
-                  заполненных записей.
+                  Показаны услуги из реестра. «На портале» — сумма работающих и
+                  неработающих услуг. «Заявлено» задаётся вручную.
                 </p>
               )}
               <ServiceTable
                 services={filtered}
-                onEdit={admin ? requestEdit : undefined}
+                onEdit={admin ? setEditingService : undefined}
                 onDelete={admin ? setDeleting : undefined}
                 onFiles={
                   admin ? (service) => setFileService({ service }) : undefined
@@ -980,13 +1120,13 @@ export default function Dashboard({ demo }: { demo: Store }) {
                   text={
                     store.services.length
                       ? "Попробуйте изменить поиск или фильтры."
-                      : "Добавьте ID и название услуги в новый отчёт."
+                      : "Нажмите «Добавить услугу», чтобы создать первую запись."
                   }
                 />
               )}
               <div className="table-footer">
                 Найдено: {filtered.length} услуг
-                <span>Итоги отчёта вводятся отдельно от реестра</span>
+                <span>Каждая услуга учитывается один раз</span>
               </div>
             </section>
           )}
@@ -1070,6 +1210,11 @@ export default function Dashboard({ demo }: { demo: Store }) {
                     : "Нет отчёта до начала периода — прирост пока не определён."}
                 </p>
               </section>
+              <p className="footnote">
+                В сохранённых отчётах прежние значения «На портале» остаются без
+                изменений. Обзор и сравнение выше рассчитывают этот показатель
+                по статусам услуг.
+              </p>
               <section className="panel history-list">
                 <div className="panel-heading">
                   <h2>Сохранённые отчёты</h2>
@@ -1173,6 +1318,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
           onClose={() => {
             setLogin(false);
             setPendingAdd(false);
+            setPendingEdit(false);
           }}
           onSuccess={async () => {
             const data = await api("/api/data");
@@ -1181,6 +1327,10 @@ export default function Dashboard({ demo }: { demo: Store }) {
             if (pendingAdd) {
               setAdding(true);
               setPendingAdd(false);
+            }
+            if (pendingEdit) {
+              setEditor(true);
+              setPendingEdit(false);
             }
             setLogin(false);
             setError("");
@@ -1212,6 +1362,19 @@ export default function Dashboard({ demo }: { demo: Store }) {
             setStore(data);
             setDeleting(null);
             setToast("Услуга удалена из реестра. История сохранена.");
+          }}
+        />
+      )}
+      {editingService && (
+        <AddService
+          store={store}
+          initialService={editingService}
+          onClose={() => setEditingService(null)}
+          onSaved={(data, service, files) => {
+            setStore(data);
+            setEditingService(null);
+            if (service && files?.length) setFileService({ service, files });
+            setToast("Изменения услуги сохранены в истории.");
           }}
         />
       )}
@@ -1303,84 +1466,140 @@ function ServiceTable({
   onFiles,
 }: {
   services: Service[];
-  onEdit?: () => void;
+  onEdit?: (service: Service) => void;
   onDelete?: (service: Service) => void;
   onFiles?: (service: Service) => void;
 }) {
+  const [page, setPage] = useState(0);
+  const signature = services.map((s) => s.id).join("\0");
+  useEffect(() => setPage(0), [signature]);
+  const pages = Math.max(1, Math.ceil(services.length / 25));
+  const currentPage = Math.min(page, pages - 1);
   return (
-    <div className="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Название услуги</th>
-            <th>Категория</th>
-            <th>Получатели</th>
-            <th>Статус</th>
-            {(onEdit || onDelete || onFiles) && (
-              <th>
-                <span className="sr-only">Действия</span>
-              </th>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {services.map((s) => (
-            <tr key={s.id}>
-              <td>
-                <span className="service-id">{s.id}</span>
-              </td>
-              <td className="service-name">{s.name}</td>
-              <td>{s.category || "Без категории"}</td>
-              <td>
-                <span className="audience-tag">
-                  {audienceLabels[s.audience]}
-                </span>
-              </td>
-              <td>
-                <span className={`status-tag ${s.status}`}>
-                  <i />
-                  {statusLabels[s.status]}
-                </span>
-              </td>
+    <>
+      <div
+        className="table-scroll"
+        tabIndex={0}
+        aria-label="Таблица услуг, прокрутка по горизонтали"
+      >
+        <table>
+          <thead>
+            <tr>
+              <th>Название услуги</th>
+              <th>Категория</th>
+              <th>Получатели</th>
+              <th>Статус</th>
+              <th>Оплата</th>
               {(onEdit || onDelete || onFiles) && (
-                <td>
-                  {onEdit && (
-                    <button
-                      className="icon-button"
-                      aria-label={`Редактировать ${s.name}`}
-                      onClick={onEdit}
-                    >
-                      <Pencil size={15} />
-                    </button>
-                  )}
-                  {onFiles && (
-                    <button
-                      className="icon-button"
-                      title="Файлы услуги"
-                      aria-label={`Файлы услуги ${s.name}`}
-                      onClick={() => onFiles(s)}
-                    >
-                      <Paperclip size={16} />
-                    </button>
-                  )}
-                  {onDelete && (
-                    <button
-                      className="icon-button delete"
-                      aria-label={`Удалить услугу ${s.name}`}
-                      title="Удалить услугу"
-                      onClick={() => onDelete(s)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-                </td>
+                <th>
+                  <span className="sr-only">Действия</span>
+                </th>
               )}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {services
+              .slice(currentPage * 25, (currentPage + 1) * 25)
+              .map((s) => (
+                <tr key={s.id}>
+                  <td className="service-name">
+                    {onEdit ? (
+                      <button
+                        className="service-title-button"
+                        onClick={() => onEdit(s)}
+                      >
+                        {s.name}
+                      </button>
+                    ) : (
+                      s.name
+                    )}
+                    <span className="service-id" title={s.id}>
+                      ID: {s.id}
+                    </span>
+                  </td>
+                  <td>{s.category || "Без категории"}</td>
+                  <td>
+                    <span className="audience-tag">
+                      {audienceLabels[s.audience]}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`status-tag ${s.status}`}>
+                      <i />
+                      {statusLabels[s.status]}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`payment-tag ${s.payment || "unknown"}`}>
+                      {s.payment === "paid"
+                        ? "Платно"
+                        : s.payment === "free"
+                          ? "Бесплатно"
+                          : "Не указано"}
+                    </span>
+                  </td>
+                  {(onEdit || onDelete || onFiles) && (
+                    <td className="service-actions">
+                      {onEdit && (
+                        <button
+                          className="icon-button"
+                          aria-label={`Редактировать ${s.name}`}
+                          onClick={() => onEdit(s)}
+                        >
+                          <Pencil size={15} />
+                        </button>
+                      )}
+                      {onFiles && (
+                        <button
+                          className="icon-button"
+                          title="Файлы услуги"
+                          aria-label={`Файлы услуги ${s.name}`}
+                          onClick={() => onFiles(s)}
+                        >
+                          <Paperclip size={16} />
+                        </button>
+                      )}
+                      {onDelete && (
+                        <button
+                          className="icon-button delete"
+                          aria-label={`Удалить услугу ${s.name}`}
+                          title="Удалить услугу"
+                          onClick={() => onDelete(s)}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+      {pages > 1 && (
+        <nav className="pagination" aria-label="Страницы реестра">
+          <button
+            className="secondary"
+            disabled={currentPage === 0}
+            onClick={() => setPage(currentPage - 1)}
+          >
+            <ArrowLeft size={16} />
+            Назад
+          </button>
+          <span>
+            Страница {currentPage + 1} из {pages}
+          </span>
+          <button
+            className="secondary"
+            disabled={currentPage + 1 === pages}
+            onClick={() => setPage(currentPage + 1)}
+          >
+            Далее
+            <ArrowRight size={16} />
+          </button>
+        </nav>
+      )}
+    </>
   );
 }
 function Login({
@@ -1543,13 +1762,13 @@ function Editor({
               <label key={key} className="field">
                 {metricLabels[key]}
                 <input
-                  required={key === "declared" || key === "portal"}
+                  required={key === "declared"}
                   type="number"
                   min="0"
                   max="1000000"
                   step="1"
-                  readOnly={key !== "declared" && key !== "portal"}
-                  aria-label={`${metricLabels[key]}${key !== "declared" && key !== "portal" ? ": рассчитано по реестру" : ""}`}
+                  readOnly={key !== "declared"}
+                  aria-label={`${metricLabels[key]}${key !== "declared" ? ": рассчитано по реестру" : ""}`}
                   value={
                     Number.isNaN(visibleMetrics(metrics)[key])
                       ? ""
@@ -1574,141 +1793,173 @@ function Editor({
             ))}
           </div>
           <p className="footnote">
-            Вручную задаются только «Заявлено услуг» и «На портале». «Работают»
-            — число записей со статусом «Работает»; Физ, Юр и Физ/Юр — отдельные
-            группы добавленных услуг. Добавление, изменение и удаление записей
-            пересчитывает эти пять показателей, не меняя ручные значения.
+            Вручную задаётся «Заявлено услуг». «На портале» = «Работают» + «Не
+            работают». Остальные показатели рассчитываются по услугам. Старые
+            отчёты сохраняют прежние значения.
           </p>
-          <div className="editor-section-heading">
-            <h3>
-              Реестр услуг{" "}
+          <details
+            className="registry-editor-details"
+            onInvalid={(e) => {
+              e.currentTarget.open = true;
+            }}
+          >
+            <summary>
+              Редактировать реестр{" "}
               <span className="count-badge">{services.length}</span>
-            </h3>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                const service: Service = {
-                  id: "",
-                  name: "",
-                  audience: "individual",
-                  status: "planned",
-                };
-                setServices((s) => [...s, service]);
-                setMetrics((m) => registryMetrics(m, [...services, service]));
-                setDirty(true);
-              }}
-            >
-              <Plus size={16} />
-              Добавить услугу
-            </button>
-          </div>
-          {services.length === 0 && (
-            <div className="empty-small">
-              Добавьте услугу по названию. ID можно оставить пустым. Выберите
-              получателей и статус — расчётные показатели обновятся
-              автоматически.
+            </summary>
+            <div className="editor-section-heading">
+              <h3>
+                Реестр услуг{" "}
+                <span className="count-badge">{services.length}</span>
+              </h3>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  const service: Service = {
+                    id: "",
+                    name: "",
+                    audience: "individual",
+                    status: "planned",
+                  };
+                  setServices((s) => [...s, service]);
+                  setMetrics((m) => registryMetrics(m, [...services, service]));
+                  setDirty(true);
+                }}
+              >
+                <Plus size={16} />
+                Добавить услугу
+              </button>
             </div>
-          )}
-          <p className="footnote">
-            Каждая запись учитывается один раз в своей группе получателей.
-            Только статус «Работает» увеличивает число работающих услуг.
-            Заявлено и На портале остаются заданными вручную.
-          </p>
-          <div className="service-editor-list">
-            {services.map((s, i) => (
-              <div className="service-editor-row" key={i}>
-                <label className="field">
-                  ID (необязательно)
-                  <input
-                    maxLength={64}
-                    value={s.id}
-                    placeholder="Авто"
-                    onChange={(e) => update(i, { id: e.target.value })}
-                  />
-                </label>
-                <label className="field service-title-field">
-                  Название услуги
-                  <input
-                    required
-                    minLength={2}
-                    maxLength={240}
-                    value={s.name}
-                    placeholder="Название услуги"
-                    onChange={(e) => update(i, { name: e.target.value })}
-                  />
-                </label>
-                <label className="field">
-                  Получатели (одна или обе аудитории)
-                  <select
-                    value={s.audience}
-                    onChange={(e) =>
-                      update(i, {
-                        audience: e.target.value as Service["audience"],
-                      })
-                    }
-                  >
-                    {Object.entries(audienceLabels).map(([v, l]) => (
-                      <option key={v} value={v}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  Статус
-                  <select
-                    value={s.status}
-                    onChange={(e) =>
-                      update(i, { status: e.target.value as Service["status"] })
-                    }
-                  >
-                    {Object.entries(statusLabels).map(([v, l]) => (
-                      <option key={v} value={v}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className="icon-button delete"
-                  aria-label={`Убрать услугу ${s.name || i + 1} из нового отчёта`}
-                  onClick={() => {
-                    setMetrics((m) =>
-                      registryMetrics(
-                        m,
-                        services.filter((_, n) => n !== i),
-                      ),
-                    );
-                    setServices((rows) => rows.filter((_, n) => n !== i));
-                    setDirty(true);
-                  }}
-                >
-                  <Trash2 size={17} />
-                </button>
-                <label className="field service-category-field">
-                  Категория
-                  <select
-                    value={s.category ?? ""}
-                    onChange={(e) =>
-                      update(i, {
-                        category: (e.target.value ||
-                          undefined) as Service["category"],
-                      })
-                    }
-                  >
-                    <option value="">Выберите категорию</option>
-                    {serviceCategories.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+            {services.length === 0 && (
+              <div className="empty-small">
+                Добавьте услугу по названию. ID можно оставить пустым. Выберите
+                получателей и статус — расчётные показатели обновятся
+                автоматически.
               </div>
-            ))}
-          </div>
+            )}
+            <p className="footnote">
+              Каждая запись учитывается один раз в своей группе получателей.
+              Только статус «Работает» увеличивает число работающих услуг.
+              «Заявлено» задаётся вручную. «На портале» рассчитывается по
+              статусам.
+            </p>
+            <div className="service-editor-list">
+              {services.map((s, i) => (
+                <div className="service-editor-row" key={i}>
+                  <label className="field">
+                    ID (необязательно)
+                    <input
+                      maxLength={64}
+                      readOnly={store.services.some(
+                        (existing) => existing.id === s.id,
+                      )}
+                      value={s.id}
+                      placeholder="Авто"
+                      onChange={(e) => update(i, { id: e.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    Оплата
+                    <select
+                      value={s.payment ?? ""}
+                      onChange={(e) =>
+                        update(i, {
+                          payment: (e.target.value ||
+                            undefined) as Service["payment"],
+                        })
+                      }
+                    >
+                      <option value="">Не указано</option>
+                      <option value="free">Бесплатно</option>
+                      <option value="paid">Платно</option>
+                    </select>
+                  </label>
+                  <label className="field service-title-field">
+                    Название услуги
+                    <input
+                      required
+                      minLength={2}
+                      maxLength={240}
+                      value={s.name}
+                      placeholder="Название услуги"
+                      onChange={(e) => update(i, { name: e.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    Получатели (одна или обе аудитории)
+                    <select
+                      value={s.audience}
+                      onChange={(e) =>
+                        update(i, {
+                          audience: e.target.value as Service["audience"],
+                        })
+                      }
+                    >
+                      {Object.entries(audienceLabels).map(([v, l]) => (
+                        <option key={v} value={v}>
+                          {l}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    Статус
+                    <select
+                      value={s.status}
+                      onChange={(e) =>
+                        update(i, {
+                          status: e.target.value as Service["status"],
+                        })
+                      }
+                    >
+                      {Object.entries(statusLabels).map(([v, l]) => (
+                        <option key={v} value={v}>
+                          {l}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="icon-button delete"
+                    aria-label={`Убрать услугу ${s.name || i + 1} из нового отчёта`}
+                    onClick={() => {
+                      setMetrics((m) =>
+                        registryMetrics(
+                          m,
+                          services.filter((_, n) => n !== i),
+                        ),
+                      );
+                      setServices((rows) => rows.filter((_, n) => n !== i));
+                      setDirty(true);
+                    }}
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                  <label className="field service-category-field">
+                    Категория
+                    <select
+                      value={s.category ?? ""}
+                      onChange={(e) =>
+                        update(i, {
+                          category: (e.target.value ||
+                            undefined) as Service["category"],
+                        })
+                      }
+                    >
+                      <option value="">Выберите категорию</option>
+                      {serviceCategories.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ))}
+            </div>
+          </details>
           <label className="field">
             Комментарий к обновлению
             <textarea
@@ -1771,31 +2022,37 @@ function Editor({
 
 function AddService({
   store,
+  initialService,
   onClose,
   onSaved,
 }: {
   store: Store;
+  initialService?: Service;
   onClose: () => void;
   onSaved: (store: Store, service?: Service, files?: File[]) => void;
 }) {
   const [files, setFiles] = useState<File[]>([]);
-  const [service, setService] = useState<Service>({
-    id: "",
-    name: "",
-    audience: "individual",
-    status: "planned",
-  });
+  const [service, setService] = useState<Service>(
+    initialService ?? {
+      id: "",
+      name: "",
+      audience: "individual",
+      status: "planned",
+    },
+  );
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [dirty, setDirty] = useState(false),
     [discard, setDiscard] = useState(false);
   const latest = ordered(store.snapshots).at(-1);
   const base = latest?.metrics ?? zero;
-  const [portal, setPortal] = useState<number | null>(base.portal ?? null);
-  const totals = registryMetrics({ ...base, portal }, [
-    ...store.services,
-    service,
-  ]);
+  const nextServices = (value: Service) =>
+    initialService
+      ? store.services.map((s) =>
+          s.id === initialService.id ? { ...value, id: initialService.id } : s,
+        )
+      : [...store.services, value];
+  const totals = registryMetrics(base, nextServices(service));
   function update(patch: Partial<Service>) {
     setService((s) => ({ ...s, ...patch }));
     setDirty(true);
@@ -1831,9 +2088,9 @@ function AddService({
     const input = registrySaveSchema.safeParse({
       revision: store.revision,
       date: today(),
-      note: `Добавлена услуга: ${parsedService.data.name}`,
+      note: `${initialService ? "Изменена" : "Добавлена"} услуга: ${parsedService.data.name}`,
       metrics: totals,
-      services: [...store.services, parsedService.data],
+      services: nextServices(parsedService.data),
     });
     if (!input.success) {
       setError(input.error.issues[0].message);
@@ -1856,13 +2113,18 @@ function AddService({
     }
   }
   return (
-    <Modal title="Добавить услугу" onClose={close}>
-      <form onSubmit={submit}>
+    <Modal
+      title={initialService ? "Редактировать услугу" : "Добавить услугу"}
+      onClose={close}
+    >
+      <form className="service-form" onSubmit={submit}>
         <div className="modal-body">
           <p className="muted">
-            Добавьте одну услугу. Работающие услуги и группы получателей
-            пересчитаются. Заявлено и На портале останутся прежними. Запись
-            сохранится в истории за сегодня.
+            {initialService
+              ? "Измените свойства этой услуги. "
+              : "Заполните данные новой услуги. "}
+            Показатели пересчитаются автоматически. Изменения сохранятся в
+            истории за сегодня.
           </p>
           <label className="field">
             Название услуги
@@ -1923,6 +2185,24 @@ function AddService({
             </select>
           </label>
           <label className="field">
+            Оплата
+            <select
+              value={service.payment ?? ""}
+              onChange={(e) =>
+                update({
+                  payment: (e.target.value || undefined) as Service["payment"],
+                })
+              }
+            >
+              <option value="">Не указано</option>
+              <option value="free">Бесплатно</option>
+              <option value="paid">Платно</option>
+            </select>
+            <small>
+              Можно заполнить позже. Это свойство не влияет на количество услуг.
+            </small>
+          </label>
+          <label className="field">
             Файлы услуги
             <input
               type="file"
@@ -1942,37 +2222,16 @@ function AddService({
             ID (необязательно)
             <input
               maxLength={64}
+              readOnly={!!initialService}
               value={service.id}
               onChange={(e) => update({ id: e.target.value })}
               placeholder="Создаётся автоматически"
             />
           </label>
-          {base.portal == null && (
-            <label className="field">
-              Услуг на портале до добавления
-              <input
-                required
-                type="number"
-                min={base.working}
-                max={base.declared}
-                value={portal ?? ""}
-                onChange={(e) => {
-                  setPortal(
-                    e.target.value === "" ? null : Number(e.target.value),
-                  );
-                  setDirty(true);
-                }}
-              />
-              <small>
-                В последнем отчёте это число не задано. Укажите его для
-                сохранения.
-              </small>
-            </label>
-          )}
           <p className="footnote">
-            После добавления: заявлено {number(totals.declared)}, на портале{" "}
+            После сохранения: заявлено {number(totals.declared)}, на портале{" "}
             {number(totals.portal)}, работают {number(totals.working)}, не
-            работает {number(totals.notWorking)}, физ{" "}
+            работают {number(totals.notWorking)}, физ{" "}
             {number(visibleMetrics(totals).individual)}, юр{" "}
             {number(visibleMetrics(totals).business)}, физ/юр{" "}
             {number(totals.both)}.
@@ -2008,7 +2267,11 @@ function AddService({
             Отмена
           </button>
           <button className="primary" disabled={busy}>
-            {busy ? "Сохранение…" : "Добавить услугу"}
+            {busy
+              ? "Сохранение…"
+              : initialService
+                ? "Сохранить изменения"
+                : "Добавить услугу"}
           </button>
         </div>
       </form>
@@ -2067,8 +2330,8 @@ function DeleteService({
         <strong>{service.name}</strong>
         <p className="muted">
           Услуга будет удалена из текущего реестра. Расчётные показатели
-          обновятся, а «Заявлено» и «На портале» останутся прежними. Предыдущие
-          отчёты сохранятся в истории.
+          обновятся, включая «На портале». «Заявлено» останется прежним.
+          Предыдущие отчёты сохранятся в истории.
         </p>
         {error && (
           <p className="error" role="alert">

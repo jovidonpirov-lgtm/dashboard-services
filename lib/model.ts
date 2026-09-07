@@ -43,6 +43,7 @@ export const serviceSchema = z.object({
     .transform((id) => id || crypto.randomUUID()),
   name: z.string().trim().min(2).max(240),
   category: z.enum(serviceCategories).optional(),
+  payment: z.enum(["paid", "free"]).optional(),
   audience: z.enum(["individual", "business", "both"]),
   status: z.enum(["working", "notWorking", "portal", "progress", "planned"]),
 });
@@ -361,27 +362,60 @@ export function registryMetrics(
     notWorking: services.filter((s) => s.status === "notWorking").length,
   };
 }
+// Current calculation is separate from legacy report projection. No stored reports are rewritten.
+export function currentRegistryMetrics(
+  base: Pick<Metrics, "declared" | "portal">,
+  services: Service[],
+): Metrics {
+  const metrics = registryMetrics(base, services);
+  // Preserve legacy status values while including services already marked as not working on the portal.
+  const notWorking = services.filter(
+    (s) => s.status === "notWorking" || s.status === "portal",
+  ).length;
+  return { ...metrics, notWorking, portal: metrics.working + notWorking };
+}
+export function paymentBreakdown(services: Service[]) {
+  return {
+    paid: services.filter((s) => s.payment === "paid").length,
+    free: services.filter((s) => s.payment === "free").length,
+    unknown: services.filter((s) => !s.payment).length,
+  };
+}
+export function analysisSnapshots(snapshots: Snapshot[]) {
+  return snapshots.map((s) => ({
+    ...s,
+    metrics: currentRegistryMetrics(s.metrics, s.services),
+  }));
+}
 export function registryStore(store: Store): Store {
   return {
     ...store,
     snapshots: store.snapshots.map((snapshot) => ({
       ...snapshot,
-      metrics: registryMetrics(snapshot.metrics, snapshot.services),
+      metrics: {
+        ...registryMetrics(snapshot.metrics, snapshot.services),
+        notWorking:
+          snapshot.metrics.notWorking ??
+          registryMetrics(snapshot.metrics, snapshot.services).notWorking,
+      },
     })),
   };
 }
-// Accept only the two manual facts; recompute everything else on the server.
+// Declared is the manual fact. Accept legacy portal input but always derive the new total.
 export const registrySaveSchema = z
   .object({
     revision: z.number().int().min(0),
     date: z.string(),
     note: z.string(),
-    metrics: z.object({ declared: count, portal: count }),
+    metrics: z.object({ declared: count, portal: count.nullable().optional() }),
     services: z.array(serviceSchema).max(10000),
   })
   .transform((input): z.input<typeof saveSchema> => ({
     ...input,
-    metrics: registryMetrics(input.metrics, input.services),
+    metrics: currentRegistryMetrics(
+      { ...input.metrics, portal: input.metrics.portal ?? null },
+      input.services,
+    ),
   }))
   .pipe(saveSchema);
 
@@ -394,7 +428,9 @@ export function matchesRegistryFilters(
     status === "all" ||
     (status === "onPortal"
       ? ["working", "portal", "notWorking"].includes(service.status)
-      : service.status === status);
+      : status === "notWorking"
+        ? service.status === "notWorking" || service.status === "portal"
+        : service.status === status);
   return matchesStatus && (audience === "all" || service.audience === audience);
 }
 export function metricFilters(key: keyof Metrics) {

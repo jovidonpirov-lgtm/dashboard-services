@@ -587,7 +587,7 @@ test("54 unique services display as three exclusive groups and shared additions 
   });
 });
 
-test("manual facts stay fixed while all derived counts come only from registered services", () => {
+test("declared stays fixed and new reports derive portal from registered statuses", () => {
   const facts = { declared: 116, portal: 54 };
   const shared: Service = {
     id: "a",
@@ -620,6 +620,7 @@ test("manual facts stay fixed while all derived counts come only from registered
   });
   assert.deepEqual(visibleMetrics(parsed.metrics), {
     ...facts,
+    portal: 2,
     notWorking: 0,
     working: 2,
     individual: 1,
@@ -659,7 +660,7 @@ test("manual facts stay fixed while all derived counts come only from registered
       metrics: { declared: 116, portal: 0 },
       services: [shared],
     }).success,
-    false,
+    true,
   );
 });
 
@@ -679,7 +680,7 @@ test("not-working status has its own count and transitions without changing manu
   assert.equal(parsed.metrics.notWorking, 1);
   assert.equal(parsed.metrics.working, 0);
   assert.equal(parsed.metrics.declared, 116);
-  assert.equal(parsed.metrics.portal, 49);
+  assert.equal(parsed.metrics.portal, 1);
   const repaired = registryMetrics(facts, [{ ...row, status: "working" }]);
   assert.equal(repaired.notWorking, 0);
   assert.equal(repaired.working, 1);
@@ -734,7 +735,7 @@ test("deleting the last service clears derived totals and preserves facts and pr
   assert.equal(next.snapshots[0].services[0].id, "remove-me");
   assert.deepEqual(visibleMetrics(next.snapshots[1].metrics), {
     declared: 116,
-    portal: 49,
+    portal: 0,
     working: 0,
     notWorking: 0,
     individual: 0,
@@ -758,7 +759,7 @@ test("metric card filters use exact audience groups and portal status membership
     declared: ["a", "b", "c", "d"],
     portal: ["a", "b", "c"],
     working: ["a"],
-    notWorking: ["b"],
+    notWorking: ["b", "c"],
     individual: ["a"],
     business: ["b"],
     both: ["c", "d"],

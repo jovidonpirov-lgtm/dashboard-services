@@ -32,6 +32,8 @@ export function ServiceFiles({
   const started = useRef(false),
     input = useRef<HTMLInputElement>(null);
   async function reload() {
+    setLoading(true);
+    setError("");
     try {
       setFiles(
         await request(
@@ -158,11 +160,19 @@ export function ServiceFiles({
       {error && (
         <p className="error" role="alert">
           {error}
+          <button
+            type="button"
+            className="secondary"
+            onClick={reload}
+            disabled={loading || busy}
+          >
+            Повторить
+          </button>
         </p>
       )}
       {loading ? (
         <p className="muted">Загрузка файлов…</p>
-      ) : !shown.length ? (
+      ) : error && !shown.length ? null : !shown.length ? (
         <p className="muted">
           {query
             ? "Файлы не найдены."
