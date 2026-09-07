@@ -20,6 +20,20 @@ export function dateLabel(date: string, long = false) {
     ...(long ? { year: "numeric" as const } : {}),
   });
 }
+export const serviceCategories = [
+  "Документы",
+  "Транспорт",
+  "Справки и выписки",
+  "Семья",
+  "Налоги и регистрация",
+  "Юстиция",
+  "Недвижимость",
+  "Таможня",
+  "Здравоохранение",
+  "Связь и почта",
+  "Лицензирование",
+  "Справочные услуги",
+] as const;
 export const serviceSchema = z.object({
   id: z
     .string()
@@ -28,6 +42,7 @@ export const serviceSchema = z.object({
     .optional()
     .transform((id) => id || crypto.randomUUID()),
   name: z.string().trim().min(2).max(240),
+  category: z.enum(serviceCategories).optional(),
   audience: z.enum(["individual", "business", "both"]),
   status: z.enum(["working", "portal", "progress", "planned"]),
 });

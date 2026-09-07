@@ -4,6 +4,7 @@ import {
   applySave,
   adjustServiceTotals,
   audienceBreakdown,
+  serviceCategories,
   type Service,
   asOf,
   compare,
@@ -484,4 +485,47 @@ test("service IDs are generated for blank or omitted input and supplied IDs are 
   assert.ok(result.services[1].id.length > 0);
   assert.equal(result.services[2].id, "custom-id");
   assert.deepEqual(saveSchema.parse(result).services, result.services);
+});
+
+test("all service categories persist in snapshots, old uncategorized services remain valid", () => {
+  for (const category of serviceCategories) {
+    const row = {
+      id: "one",
+      name: "Услуга",
+      audience: "individual",
+      status: "planned",
+      category,
+    };
+    const parsed = saveSchema.parse({ ...input(), services: [row] });
+    const saved = applySave(
+      { revision: 0, services: [], snapshots: [] },
+      parsed,
+      "report",
+      new Date().toISOString(),
+    );
+    assert.equal(saved.services[0].category, category);
+    assert.equal(saved.snapshots[0].services[0].category, category);
+    const edited = { ...saved.services[0], category: "Семья" as const };
+    assert.deepEqual(
+      adjustServiceTotals(parsed.metrics, saved.services[0], edited),
+      parsed.metrics,
+    );
+  }
+  const row = {
+    id: "old",
+    name: "Услуга",
+    audience: "individual",
+    status: "planned",
+  };
+  assert.equal(
+    saveSchema.safeParse({ ...input(), services: [row] }).success,
+    true,
+  );
+  assert.equal(
+    saveSchema.safeParse({
+      ...input(),
+      services: [{ ...row, category: "unknown" }],
+    }).success,
+    false,
+  );
 });

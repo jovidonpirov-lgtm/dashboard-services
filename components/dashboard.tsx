@@ -39,6 +39,7 @@ import {
   asOf,
   adjustServiceTotals,
   audienceBreakdown,
+  serviceCategories,
   audienceLabels,
   compare,
   dateLabel,
@@ -334,7 +335,8 @@ export default function Dashboard({ demo }: { demo: Store }) {
     [to, setTo] = useState(today()),
     [query, setQuery] = useState(""),
     [status, setStatus] = useState("all"),
-    [audience, setAudience] = useState("all");
+    [audience, setAudience] = useState("all"),
+    [category, setCategory] = useState("all");
   useEffect(() => {
     let active = true;
     api("/api/auth")
@@ -387,6 +389,8 @@ export default function Dashboard({ demo }: { demo: Store }) {
     (s) =>
       (s.name + " " + s.id).toLowerCase().includes(query.toLowerCase()) &&
       (status === "all" || s.status === status) &&
+      (category === "all" ||
+        (category === "none" ? !s.category : s.category === category)) &&
       (audience === "all" || s.audience === audience || s.audience === "both"),
   );
   function changeRange(value: string) {
@@ -865,6 +869,19 @@ export default function Dashboard({ demo }: { demo: Store }) {
                   <option value="individual">Физические лица</option>
                   <option value="business">Юридические лица</option>
                 </select>
+                <select
+                  aria-label="Категория услуги"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  <option value="all">Все категории</option>
+                  <option value="none">Без категории</option>
+                  {serviceCategories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
               </div>
               <ServiceTable
                 services={filtered}
@@ -1154,6 +1171,7 @@ function ServiceTable({
           <tr>
             <th>ID</th>
             <th>Название услуги</th>
+            <th>Категория</th>
             <th>Получатели</th>
             <th>Статус</th>
             {onEdit && (
@@ -1170,6 +1188,7 @@ function ServiceTable({
                 <span className="service-id">{s.id}</span>
               </td>
               <td className="service-name">{s.name}</td>
+              <td>{s.category || "Без категории"}</td>
               <td>
                 <span className="audience-tag">
                   {audienceLabels[s.audience]}
@@ -1485,6 +1504,25 @@ function Editor({
                 >
                   <Trash2 size={17} />
                 </button>
+                <label className="field service-category-field">
+                  Категория
+                  <select
+                    value={s.category ?? ""}
+                    onChange={(e) =>
+                      update(i, {
+                        category: (e.target.value ||
+                          undefined) as Service["category"],
+                      })
+                    }
+                  >
+                    <option value="">Выберите категорию</option>
+                    {serviceCategories.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             ))}
           </div>

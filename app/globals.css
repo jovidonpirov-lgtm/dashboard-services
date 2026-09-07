@@ -930,6 +930,7 @@ footer {
 }
 .filters {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 22px 24px;
@@ -2100,4 +2101,8 @@ td,
   .nav-count {
     display: none;
   }
+}
+
+.service-editor-row .service-category-field {
+  grid-column: 1 / -1;
 }
