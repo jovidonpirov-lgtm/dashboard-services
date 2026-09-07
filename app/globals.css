@@ -2160,3 +2160,61 @@ button.metric-card:focus-visible {
   color: #6c7a83;
   font-size: 13px;
 }
+
+.public-files {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+.public-files h1 {
+  margin-top: 28px;
+}
+.file-upload {
+  padding: 16px;
+  background: #f4f8f6;
+  border-radius: 10px;
+  margin-bottom: 20px;
+}
+.file-list {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0;
+}
+.file-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid #e2e9e6;
+}
+.file-info {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.file-info small,
+.file-info span {
+  color: #6c7a83;
+  font-size: 13px;
+}
+.file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.file-confirm {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.file-panel input[type="file"] {
+  max-width: 100%;
+  height: auto;
+}

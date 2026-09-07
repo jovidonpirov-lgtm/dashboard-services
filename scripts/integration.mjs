@@ -207,6 +207,96 @@ try {
   assert.equal(history.services[0].id, "TEST-1");
   assert.equal(history.snapshots[0].note, "Integration test report");
   ok("backdated report preserves latest registry and original history");
+
+  if (process.env.S3_BUCKET) {
+    const bytes = new TextEncoder().encode(
+      "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF",
+    );
+    const fileInput = {
+      serviceId: "TEST-1",
+      name: "Проверка.pdf",
+      size: bytes.length,
+    };
+    assert.equal((await request("/api/files", "POST", fileInput)).status, 401);
+    assert.equal(
+      (
+        await request(
+          "/api/files",
+          "POST",
+          fileInput,
+          cookie,
+          "https://untrusted.invalid",
+        )
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await request(
+          "/api/files",
+          "POST",
+          { ...fileInput, serviceId: "missing" },
+          cookie,
+        )
+      ).status,
+      400,
+    );
+    ok("file writes require admin, origin and an existing service");
+    const prepared = await request("/api/files", "POST", fileInput, cookie);
+    assert.equal(prepared.status, 200, await prepared.clone().text());
+    const upload = await prepared.json();
+    try {
+      const preflight = await fetch(upload.url, {
+        method: "OPTIONS",
+        headers: {
+          Origin: "https://dashboard-services-coral.vercel.app",
+          "Access-Control-Request-Method": "POST",
+        },
+      });
+      assert.ok(
+        ["*", "https://dashboard-services-coral.vercel.app"].includes(
+          preflight.headers.get("access-control-allow-origin"),
+        ),
+      );
+      const form = new FormData();
+      Object.entries(upload.fields).forEach(([k, v]) => form.append(k, v));
+      form.append(
+        "file",
+        new Blob([bytes], { type: "application/pdf" }),
+        fileInput.name,
+      );
+      const uploaded = await fetch(upload.url, { method: "POST", body: form });
+      assert.ok(uploaded.ok, await uploaded.text());
+      assert.equal((await request("/api/files/" + upload.id)).status, 404);
+      assert.equal(
+        (await request("/api/files/" + upload.id, "POST", undefined, cookie))
+          .status,
+        200,
+      );
+      const listed = await (await request("/api/files")).json();
+      assert.equal(listed.find((f) => f.id === upload.id).name, fileInput.name);
+      const download = await request("/api/files/" + upload.id + "?download=1");
+      assert.equal(download.status, 200);
+      assert.match(download.headers.get("content-disposition"), /^attachment/);
+      assert.deepEqual(new Uint8Array(await download.arrayBuffer()), bytes);
+      assert.equal(
+        (await request("/api/files/" + upload.id, "DELETE")).status,
+        401,
+      );
+      ok(
+        "real S3 upload, sealed publication and anonymous download match original bytes",
+      );
+      const stateAfterFiles = await (
+        await request("/api/data", "GET", undefined, cookie)
+      ).json();
+      assert.deepEqual(stateAfterFiles, history);
+      ok("attachments do not change service totals or reports");
+    } finally {
+      await request("/api/files/" + upload.id, "DELETE", undefined, cookie);
+    }
+    assert.equal((await request("/api/files/" + upload.id)).status, 404);
+    ok("file removal revokes public download");
+  }
   const forged = cookie.slice(0, -1) + (cookie.endsWith("a") ? "b" : "a");
   assert.equal(
     (await request("/api/data", "GET", undefined, forged)).status,

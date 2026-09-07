@@ -94,3 +94,9 @@ export async function allowLogin(): Promise<boolean> {
   attempts.set(key, n);
   return n <= 20;
 }
+
+export async function fileDatabase() {
+  const db = await database();
+  if (!db) throw new Error("Для вложений требуется подключение PostgreSQL.");
+  return db;
+}

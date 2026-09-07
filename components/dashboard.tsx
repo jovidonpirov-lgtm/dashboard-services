@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   Activity,
+  Paperclip,
   Globe,
   ArrowDownRight,
   ArrowRight,
@@ -59,6 +60,8 @@ import {
   type Store,
 } from "@/lib/model";
 import { registerAnalysisTools, type ModelContext } from "@/lib/agent-tools";
+import { uploadSchema } from "@/lib/file-model";
+import { ServiceFiles, fileAccept } from "@/components/service-files";
 const zero: Metrics = {
   declared: 0,
   portal: 0,
@@ -336,6 +339,10 @@ export default function Dashboard({ demo }: { demo: Store }) {
     [editor, setEditor] = useState(false),
     [adding, setAdding] = useState(false),
     [deleting, setDeleting] = useState<Service | null>(null),
+    [fileService, setFileService] = useState<{
+      service: Service;
+      files?: File[];
+    } | null>(null),
     [pendingAdd, setPendingAdd] = useState(false),
     [detail, setDetail] = useState<Snapshot | null>(null),
     [error, setError] = useState(""),
@@ -531,6 +538,10 @@ export default function Dashboard({ demo }: { demo: Store }) {
               </p>
             </div>
             <div className="heading-actions">
+              <a href="/files" className="secondary">
+                <Paperclip size={17} />
+                Файлы услуг
+              </a>
               <button
                 className="secondary"
                 onClick={requestAdd}
@@ -955,6 +966,9 @@ export default function Dashboard({ demo }: { demo: Store }) {
                 services={filtered}
                 onEdit={admin ? requestEdit : undefined}
                 onDelete={admin ? setDeleting : undefined}
+                onFiles={
+                  admin ? (service) => setFileService({ service }) : undefined
+                }
               />
               {!filtered.length && (
                 <Empty
@@ -1174,6 +1188,21 @@ export default function Dashboard({ demo }: { demo: Store }) {
           }}
         />
       )}
+      {fileService && (
+        <Modal
+          title={`Файлы: ${fileService.service.name}`}
+          onClose={() => setFileService(null)}
+          wide
+        >
+          <div className="modal-body">
+            <ServiceFiles
+              serviceId={fileService.service.id}
+              admin={admin}
+              initialFiles={fileService.files}
+            />
+          </div>
+        </Modal>
+      )}
       {deleting && (
         <DeleteService
           store={store}
@@ -1190,9 +1219,10 @@ export default function Dashboard({ demo }: { demo: Store }) {
         <AddService
           store={store}
           onClose={() => setAdding(false)}
-          onSaved={(data) => {
+          onSaved={(data, service, files) => {
             setStore(data);
             setAdding(false);
+            if (service && files?.length) setFileService({ service, files });
             setToast(
               "Услуга добавлена. Расчётные показатели и история обновлены.",
             );
@@ -1270,10 +1300,12 @@ function ServiceTable({
   services,
   onEdit,
   onDelete,
+  onFiles,
 }: {
   services: Service[];
   onEdit?: () => void;
   onDelete?: (service: Service) => void;
+  onFiles?: (service: Service) => void;
 }) {
   return (
     <div className="table-scroll">
@@ -1285,7 +1317,7 @@ function ServiceTable({
             <th>Категория</th>
             <th>Получатели</th>
             <th>Статус</th>
-            {(onEdit || onDelete) && (
+            {(onEdit || onDelete || onFiles) && (
               <th>
                 <span className="sr-only">Действия</span>
               </th>
@@ -1311,7 +1343,7 @@ function ServiceTable({
                   {statusLabels[s.status]}
                 </span>
               </td>
-              {(onEdit || onDelete) && (
+              {(onEdit || onDelete || onFiles) && (
                 <td>
                   {onEdit && (
                     <button
@@ -1320,6 +1352,16 @@ function ServiceTable({
                       onClick={onEdit}
                     >
                       <Pencil size={15} />
+                    </button>
+                  )}
+                  {onFiles && (
+                    <button
+                      className="icon-button"
+                      title="Файлы услуги"
+                      aria-label={`Файлы услуги ${s.name}`}
+                      onClick={() => onFiles(s)}
+                    >
+                      <Paperclip size={16} />
                     </button>
                   )}
                   {onDelete && (
@@ -1734,8 +1776,9 @@ function AddService({
 }: {
   store: Store;
   onClose: () => void;
-  onSaved: (store: Store) => void;
+  onSaved: (store: Store, service?: Service, files?: File[]) => void;
 }) {
+  const [files, setFiles] = useState<File[]>([]);
   const [service, setService] = useState<Service>({
     id: "",
     name: "",
@@ -1765,6 +1808,21 @@ function AddService({
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    if (files.length > 20) {
+      setError("Можно прикрепить до 20 файлов к услуге.");
+      return;
+    }
+    for (const file of files) {
+      const check = uploadSchema.safeParse({
+        serviceId: "new",
+        name: file.name,
+        size: file.size,
+      });
+      if (!check.success) {
+        setError(check.error.issues[0].message);
+        return;
+      }
+    }
     const parsedService = serviceSchema.safeParse(service);
     if (!parsedService.success) {
       setError("Введите название услуги и проверьте остальные поля.");
@@ -1788,6 +1846,8 @@ function AddService({
           method: "POST",
           body: JSON.stringify(input.data),
         }),
+        parsedService.data,
+        files,
       );
     } catch (e) {
       setError((e as Error).message);
@@ -1861,6 +1921,22 @@ function AddService({
                 </option>
               ))}
             </select>
+          </label>
+          <label className="field">
+            Файлы услуги
+            <input
+              type="file"
+              accept={fileAccept}
+              multiple
+              onChange={(e) => {
+                setFiles(Array.from(e.target.files || []));
+                setDirty(true);
+              }}
+            />
+            <small>
+              До 20 МБ каждый. После сохранения услуги начнётся загрузка. Файлы
+              будут видны всем.
+            </small>
           </label>
           <label className="field">
             ID (необязательно)
