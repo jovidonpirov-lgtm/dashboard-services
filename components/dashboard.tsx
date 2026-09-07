@@ -40,6 +40,7 @@ import {
   adjustServiceTotals,
   audienceBreakdown,
   serviceCategories,
+  serviceSchema,
   audienceLabels,
   compare,
   dateLabel,
@@ -327,6 +328,8 @@ export default function Dashboard({ demo }: { demo: Store }) {
     [section, setSection] = useState<Section>("overview");
   const [login, setLogin] = useState(false),
     [editor, setEditor] = useState(false),
+    [adding, setAdding] = useState(false),
+    [pendingAdd, setPendingAdd] = useState(false),
     [detail, setDetail] = useState<Snapshot | null>(null),
     [error, setError] = useState(""),
     [toast, setToast] = useState("");
@@ -411,6 +414,13 @@ export default function Dashboard({ demo }: { demo: Store }) {
       setError((e as Error).message);
     }
   }
+  const requestAdd = () => {
+    if (admin) setAdding(true);
+    else {
+      setPendingAdd(true);
+      setLogin(true);
+    }
+  };
   const requestEdit = () => (admin ? setEditor(true) : setLogin(true));
   return (
     <div className="app-shell">
@@ -506,10 +516,24 @@ export default function Dashboard({ demo }: { demo: Store }) {
                     : "Все обновления и изменения показателей в одном месте."}
               </p>
             </div>
-            <button className="primary" onClick={requestEdit} disabled={!ready}>
-              <Plus size={18} />
-              Обновить данные
-            </button>
+            <div className="heading-actions">
+              <button
+                className="secondary"
+                onClick={requestAdd}
+                disabled={!ready}
+              >
+                <Plus size={18} />
+                Добавить услугу
+              </button>
+              <button
+                className="primary"
+                onClick={requestEdit}
+                disabled={!ready}
+              >
+                <Plus size={18} />
+                Обновить данные
+              </button>
+            </div>
           </div>
           {!admin && (
             <div className="demo-banner">
@@ -830,7 +854,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
                     {number(metrics.declared)} заявленных услуг
                   </p>
                 </div>
-                <button className="secondary" onClick={requestEdit}>
+                <button className="secondary" onClick={requestAdd}>
                   <Plus size={16} />
                   Добавить услугу
                 </button>
@@ -1079,14 +1103,32 @@ export default function Dashboard({ demo }: { demo: Store }) {
       </div>
       {login && (
         <Login
-          onClose={() => setLogin(false)}
+          onClose={() => {
+            setLogin(false);
+            setPendingAdd(false);
+          }}
           onSuccess={async () => {
             const data = await api("/api/data");
             setStore(data);
             setAdmin(true);
+            if (pendingAdd) {
+              setAdding(true);
+              setPendingAdd(false);
+            }
             setLogin(false);
             setError("");
             setToast("Вы вошли как администратор.");
+          }}
+        />
+      )}
+      {adding && (
+        <AddService
+          store={store}
+          onClose={() => setAdding(false)}
+          onSaved={(data) => {
+            setStore(data);
+            setAdding(false);
+            setToast("Услуга добавлена. Общие цифры и история обновлены.");
           }}
         />
       )}
@@ -1579,6 +1621,213 @@ function Editor({
               <Check size={18} />
             )}
             Сохранить отчёт
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function AddService({
+  store,
+  onClose,
+  onSaved,
+}: {
+  store: Store;
+  onClose: () => void;
+  onSaved: (store: Store) => void;
+}) {
+  const [service, setService] = useState<Service>({
+    id: "",
+    name: "",
+    audience: "individual",
+    status: "planned",
+  });
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    [dirty, setDirty] = useState(false),
+    [discard, setDiscard] = useState(false);
+  const latest = ordered(store.snapshots).at(-1);
+  const base = latest?.metrics ?? zero;
+  const [portal, setPortal] = useState<number | null>(base.portal ?? null);
+  const totals = adjustServiceTotals({ ...base, portal }, undefined, service);
+  function update(patch: Partial<Service>) {
+    setService((s) => ({ ...s, ...patch }));
+    setDirty(true);
+  }
+  function close() {
+    if (busy) return;
+    if (dirty) setDiscard(true);
+    else onClose();
+  }
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    const parsedService = serviceSchema.safeParse(service);
+    if (!parsedService.success) {
+      setError("Введите название услуги и проверьте остальные поля.");
+      return;
+    }
+    const input = saveSchema.safeParse({
+      revision: store.revision,
+      date: today(),
+      note: `Добавлена услуга: ${parsedService.data.name}`,
+      metrics: totals,
+      services: [...store.services, parsedService.data],
+    });
+    if (!input.success) {
+      setError(input.error.issues[0].message);
+      return;
+    }
+    setBusy(true);
+    try {
+      onSaved(
+        await api("/api/data", {
+          method: "POST",
+          body: JSON.stringify(input.data),
+        }),
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal title="Добавить услугу" onClose={close}>
+      <form onSubmit={submit}>
+        <div className="modal-body">
+          <p className="muted">
+            Добавьте одну услугу. Общие цифры увеличатся автоматически, запись
+            сохранится в истории за сегодня.
+          </p>
+          <label className="field">
+            Название услуги
+            <input
+              required
+              minLength={2}
+              maxLength={240}
+              value={service.name}
+              onChange={(e) => update({ name: e.target.value })}
+              placeholder="Например: Электронная подпись"
+            />
+          </label>
+          <label className="field">
+            Категория
+            <select
+              value={service.category ?? ""}
+              onChange={(e) =>
+                update({
+                  category: (e.target.value ||
+                    undefined) as Service["category"],
+                })
+              }
+            >
+              <option value="">Выберите категорию</option>
+              {serviceCategories.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Получатели
+            <select
+              value={service.audience}
+              onChange={(e) =>
+                update({ audience: e.target.value as Service["audience"] })
+              }
+            >
+              {Object.entries(audienceLabels).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Статус
+            <select
+              value={service.status}
+              onChange={(e) =>
+                update({ status: e.target.value as Service["status"] })
+              }
+            >
+              {Object.entries(statusLabels).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            ID (необязательно)
+            <input
+              maxLength={64}
+              value={service.id}
+              onChange={(e) => update({ id: e.target.value })}
+              placeholder="Создаётся автоматически"
+            />
+          </label>
+          {base.portal == null && (
+            <label className="field">
+              Услуг на портале до добавления
+              <input
+                required
+                type="number"
+                min={base.working}
+                max={base.declared}
+                value={portal ?? ""}
+                onChange={(e) => {
+                  setPortal(
+                    e.target.value === "" ? null : Number(e.target.value),
+                  );
+                  setDirty(true);
+                }}
+              />
+              <small>
+                В последнем отчёте это число не задано. Укажите его для
+                сохранения.
+              </small>
+            </label>
+          )}
+          <p className="footnote">
+            После добавления: заявлено {number(totals.declared)}, на портале{" "}
+            {number(totals.portal)}, работают {number(totals.working)}, физ{" "}
+            {number(totals.individual)}, юр {number(totals.business)}, физ/юр{" "}
+            {number(totals.both)}.
+          </p>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          {discard && (
+            <div className="discard">
+              <strong>Закрыть без сохранения?</strong>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setDiscard(false)}
+              >
+                Продолжить ввод
+              </button>
+              <button type="button" className="secondary" onClick={onClose}>
+                Закрыть без сохранения
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button
+            type="button"
+            className="secondary"
+            onClick={close}
+            disabled={busy}
+          >
+            Отмена
+          </button>
+          <button className="primary" disabled={busy}>
+            {busy ? "Сохранение…" : "Добавить услугу"}
           </button>
         </div>
       </form>

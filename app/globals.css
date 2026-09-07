@@ -2106,3 +2106,9 @@ td,
 .service-editor-row .service-category-field {
   grid-column: 1 / -1;
 }
+
+.heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
