@@ -52,6 +52,7 @@ export function demoStore(): Store {
           : "Ежедневное обновление показателей",
       metrics: {
         declared,
+        portal: 210 + Math.floor(i * 2),
         working,
         individual: 175 + Math.floor(i * 1.1),
         business: 85 + Math.floor(i * 0.7),

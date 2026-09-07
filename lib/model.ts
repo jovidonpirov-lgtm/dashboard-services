@@ -31,10 +31,18 @@ const count = z.number().int().min(0).max(1000000);
 export const metricsSchema = z
   .object({
     declared: count,
+    portal: count.nullable().default(null),
     working: count,
     individual: count,
     business: count,
   })
+  .refine(
+    (m) =>
+      m.portal === null || (m.working <= m.portal && m.portal <= m.declared),
+    {
+      message: "Работают ≤ На портале ≤ Заявлено услуг.",
+    },
+  )
   .refine((m) => m.working <= m.declared, {
     message: "Работающих услуг не может быть больше заявленных.",
   })
@@ -70,6 +78,11 @@ export const saveSchema = z
     services: z.array(serviceSchema).max(10000),
   })
   .superRefine((data, ctx) => {
+    if (data.metrics.portal == null)
+      ctx.addIssue({
+        code: "custom",
+        message: "Укажите количество услуг на портале.",
+      });
     if (
       new Set(data.services.map((s) => s.id.toLowerCase())).size !==
       data.services.length
@@ -148,6 +161,10 @@ export function compare(snapshots: Snapshot[], from: string, to: string) {
       baseline && end
         ? {
             declared: end.metrics.declared - baseline.metrics.declared,
+            portal:
+              end.metrics.portal != null && baseline.metrics.portal != null
+                ? end.metrics.portal - baseline.metrics.portal
+                : null,
             working: end.metrics.working - baseline.metrics.working,
             individual: end.metrics.individual - baseline.metrics.individual,
             business: end.metrics.business - baseline.metrics.business,

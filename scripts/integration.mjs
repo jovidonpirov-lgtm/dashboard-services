@@ -122,7 +122,7 @@ try {
     revision: 0,
     date,
     note: "Integration test report",
-    metrics: { declared: 2, working: 1, individual: 1, business: 1 },
+    metrics: { declared: 2, portal: 2, working: 1, individual: 1, business: 1 },
     services: [
       {
         id: "TEST-1",

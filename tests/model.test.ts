@@ -20,14 +20,14 @@ const snapshot = (
   date,
   createdAt,
   note: "Обновление",
-  metrics: { declared: 10, working, individual: 6, business: 4 },
+  metrics: { declared: 10, portal: 10, working, individual: 6, business: 4 },
   services: [],
 });
 const input = () => ({
   revision: 0,
   date: today(),
   note: "Первый отчёт",
-  metrics: { declared: 10, working: 2, individual: 6, business: 4 },
+  metrics: { declared: 10, portal: 10, working: 2, individual: 6, business: 4 },
   services: [],
 });
 test("Dushanbe calendar changes at 19:00 UTC", () => {
@@ -111,10 +111,10 @@ test("backdated entry cannot replace present-day registry", () => {
 });
 test("negative, fractional and impossible metrics rejected", () => {
   for (const metrics of [
-    { declared: 10, working: 11, individual: 6, business: 4 },
-    { declared: -1, working: 0, individual: 0, business: 0 },
-    { declared: 10, working: 1.5, individual: 6, business: 4 },
-    { declared: 10, working: 1, individual: 4, business: 4 },
+    { declared: 10, portal: 10, working: 11, individual: 6, business: 4 },
+    { declared: -1, portal: 0, working: 0, individual: 0, business: 0 },
+    { declared: 10, portal: 10, working: 1.5, individual: 6, business: 4 },
+    { declared: 10, portal: 10, working: 1, individual: 4, business: 4 },
   ])
     assert.equal(saveSchema.safeParse({ ...input(), metrics }).success, false);
 });
@@ -122,7 +122,13 @@ test("overlapping audiences accepted", () =>
   assert.equal(
     saveSchema.safeParse({
       ...input(),
-      metrics: { declared: 10, working: 2, individual: 8, business: 6 },
+      metrics: {
+        declared: 10,
+        portal: 10,
+        working: 2,
+        individual: 8,
+        business: 6,
+      },
     }).success,
     true,
   ));
@@ -150,7 +156,13 @@ test("registry may be partial but cannot exceed manual totals", () => {
   assert.equal(
     saveSchema.safeParse({
       ...input(),
-      metrics: { declared: 0, working: 0, individual: 0, business: 0 },
+      metrics: {
+        declared: 0,
+        portal: 0,
+        working: 0,
+        individual: 0,
+        business: 0,
+      },
       services: [
         { id: "1", name: "Услуга", audience: "individual", status: "planned" },
       ],
@@ -187,7 +199,13 @@ test("nonworking registry cannot contradict reported working total", () =>
   assert.equal(
     saveSchema.safeParse({
       ...input(),
-      metrics: { declared: 1, working: 1, individual: 1, business: 0 },
+      metrics: {
+        declared: 1,
+        portal: 1,
+        working: 1,
+        individual: 1,
+        business: 0,
+      },
       services: [
         {
           id: "1",
@@ -199,3 +217,29 @@ test("nonworking registry cannot contradict reported working total", () =>
     }).success,
     false,
   ));
+
+test("portal totals must sit between working and declared and be provided", () => {
+  const base = input();
+  for (const portal of [null, undefined, -1, 1, 11, 2.5]) {
+    assert.equal(
+      saveSchema.safeParse({ ...base, metrics: { ...base.metrics, portal } })
+        .success,
+      false,
+    );
+  }
+  assert.equal(
+    saveSchema.safeParse({ ...base, metrics: { ...base.metrics, portal: 7 } })
+      .success,
+    true,
+  );
+});
+test("portal history preserves unknown baseline and calculates known changes", () => {
+  const a = snapshot("2026-09-01", 2);
+  const b = snapshot("2026-09-02", 3);
+  a.metrics.portal = null;
+  b.metrics.portal = 8;
+  assert.equal(compare([a, b], b.date, b.date).delta?.portal, null);
+  a.metrics.portal = 6;
+  assert.equal(compare([a, b], b.date, b.date).delta?.portal, 2);
+  assert.equal(a.metrics.portal, 6);
+});

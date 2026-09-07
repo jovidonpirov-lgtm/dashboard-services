@@ -23,7 +23,13 @@ test("local persistence is durable and rejects competing revisions", async () =>
       revision: 0,
       date: today(),
       note: "Local test",
-      metrics: { declared: 0, working: 0, individual: 0, business: 0 },
+      metrics: {
+        declared: 0,
+        portal: 0,
+        working: 0,
+        individual: 0,
+        business: 0,
+      },
       services: [],
     };
     const result = await Promise.allSettled([

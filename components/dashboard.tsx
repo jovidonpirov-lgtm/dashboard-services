@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   Activity,
+  Globe,
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
@@ -50,14 +51,23 @@ import {
   type Store,
 } from "@/lib/model";
 import { registerAnalysisTools, type ModelContext } from "@/lib/agent-tools";
-const zero: Metrics = { declared: 0, working: 0, individual: 0, business: 0 };
-const number = (value: number) => value.toLocaleString("ru-RU");
-const signed = (value: number) => `${value > 0 ? "+" : ""}${number(value)}`;
+const zero: Metrics = {
+  declared: 0,
+  portal: 0,
+  working: 0,
+  individual: 0,
+  business: 0,
+};
+const number = (value: number | null | undefined) =>
+  value == null ? "—" : value.toLocaleString("ru-RU");
+const signed = (value: number | null) =>
+  value == null ? "—" : `${value > 0 ? "+" : ""}${number(value)}`;
 const metricLabels: Record<keyof Metrics, string> = {
   declared: "Заявлено услуг",
-  working: "Фактически работают",
-  individual: "Для физических лиц",
-  business: "Для юридических лиц",
+  portal: "На портале",
+  working: "Работают",
+  individual: "Физ",
+  business: "Юр",
 };
 const sections = {
   overview: "Обзор",
@@ -171,13 +181,14 @@ function Trend({
     pad = 36;
   const x = (i: number) => pad + (i / Math.max(days - 1, 1)) * (w - pad * 2),
     y = (n: number) => h - 18 - (n / top) * (h - 38);
-  const line = (key: "declared" | "working") =>
+  const line = (key: "declared" | "portal" | "working") =>
     points
-      .map((p, i) =>
-        p.snapshot
-          ? `${i === 0 || !points[i - 1].snapshot ? "M" : "H"}${x(i)}${i === 0 || !points[i - 1].snapshot ? " " + y(p.snapshot.metrics[key]) : " V" + y(p.snapshot.metrics[key])}`
-          : "",
-      )
+      .map((p, i) => {
+        const value = p.snapshot?.metrics[key];
+        if (value == null) return "";
+        const connected = i > 0 && points[i - 1].snapshot?.metrics[key] != null;
+        return connected ? `H${x(i)} V${y(value)}` : `M${x(i)} ${y(value)}`;
+      })
       .join(" ");
   const selected = hover === null ? null : points[hover];
   return (
@@ -190,6 +201,8 @@ function Trend({
             Работают: {selected.snapshot.metrics.working}
             <span className="dot grey" />
             Заявлено: {selected.snapshot.metrics.declared}
+            <span className="dot" style={{ background: "#5686d8" }} />
+            На портале: {number(selected.snapshot.metrics.portal)}
           </>
         ) : (
           <span>Динамика по сохранённым отчётам</span>
@@ -234,6 +247,12 @@ function Trend({
               stroke="#aebac3"
               strokeWidth="2"
               strokeDasharray="5 5"
+            />
+            <path
+              d={line("portal")}
+              fill="none"
+              stroke="#5686d8"
+              strokeWidth="2"
             />
             <path
               d={line("working")}
@@ -530,9 +549,13 @@ export default function Dashboard({ demo }: { demo: Store }) {
               <section className="metrics" aria-label="Основные показатели">
                 {(Object.keys(metricLabels) as (keyof Metrics)[]).map(
                   (key, i) => {
-                    const Icon = [Layers3, CheckCheck, UsersRound, Building2][
-                      i
-                    ];
+                    const Icon = [
+                      Layers3,
+                      Globe,
+                      CheckCheck,
+                      UsersRound,
+                      Building2,
+                    ][i];
                     return (
                       <article
                         key={key}
@@ -626,6 +649,10 @@ export default function Dashboard({ demo }: { demo: Store }) {
                       <span>
                         <i className="dot green" />
                         Работают
+                      </span>
+                      <span>
+                        <i className="dot" style={{ background: "#5686d8" }} />
+                        На портале
                       </span>
                       <span>
                         <i className="dot grey" />
@@ -950,8 +977,10 @@ export default function Dashboard({ demo }: { demo: Store }) {
                         <th>Дата отчёта</th>
                         <th>Комментарий</th>
                         <th>Заявлено</th>
+                        <th>На портале</th>
                         <th>Работают</th>
-                        <th>Физ. / юр.</th>
+                        <th>Физ</th>
+                        <th>Юр</th>
                         <th>
                           <span className="sr-only">Действие</span>
                         </th>
@@ -978,15 +1007,14 @@ export default function Dashboard({ demo }: { demo: Store }) {
                             </td>
                             <td className="history-note">{s.note}</td>
                             <td>{number(s.metrics.declared)}</td>
+                            <td>{number(s.metrics.portal)}</td>
                             <td>
                               <span className="working-number">
                                 {number(s.metrics.working)}
                               </span>
                             </td>
-                            <td>
-                              {number(s.metrics.individual)} /{" "}
-                              {number(s.metrics.business)}
-                            </td>
+                            <td>{number(s.metrics.individual)}</td>
+                            <td>{number(s.metrics.business)}</td>
                             <td>
                               <button
                                 className="icon-button"
@@ -1317,7 +1345,7 @@ function Editor({
                   min="0"
                   max="1000000"
                   step="1"
-                  value={Number.isNaN(metrics[key]) ? "" : metrics[key]}
+                  value={Number.isNaN(metrics[key]) ? "" : (metrics[key] ?? "")}
                   onChange={(e) => {
                     setMetrics((m) => ({
                       ...m,
