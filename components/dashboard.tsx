@@ -61,18 +61,20 @@ const zero: Metrics = {
   declared: 0,
   portal: 0,
   working: 0,
+  notWorking: 0,
   individual: 0,
   business: 0,
   both: 0,
 };
 const number = (value: number | null | undefined) =>
   value == null ? "—" : value.toLocaleString("ru-RU");
-const signed = (value: number | null) =>
+const signed = (value: number | null | undefined) =>
   value == null ? "—" : `${value > 0 ? "+" : ""}${number(value)}`;
 const metricLabels: Record<keyof Metrics, string> = {
   declared: "Заявлено услуг",
   portal: "На портале",
   working: "Работают",
+  notWorking: "Не работает",
   individual: "Физ",
   business: "Юр",
   both: "Физ/Юр",
@@ -587,6 +589,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
                       Layers3,
                       Globe,
                       CheckCheck,
+                      CircleHelp,
                       UsersRound,
                       Building2,
                       UsersRound,
@@ -1049,6 +1052,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
                         <th>Заявлено</th>
                         <th>На портале</th>
                         <th>Работают</th>
+                        <th>Не работает</th>
                         <th>Физ</th>
                         <th>Юр</th>
                         <th>Физ/Юр</th>
@@ -1084,6 +1088,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
                                 {number(s.metrics.working)}
                               </span>
                             </td>
+                            <td>{number(s.metrics.notWorking ?? 0)}</td>
                             <td>
                               {number(visibleMetrics(s.metrics).individual)}
                             </td>
@@ -1480,7 +1485,7 @@ function Editor({
             Вручную задаются только «Заявлено услуг» и «На портале». «Работают»
             — число записей со статусом «Работает»; Физ, Юр и Физ/Юр — отдельные
             группы добавленных услуг. Добавление, изменение и удаление записей
-            пересчитывает эти четыре показателя, не меняя ручные значения.
+            пересчитывает эти пять показателей, не меняя ручные значения.
           </p>
           <div className="editor-section-heading">
             <h3>
@@ -1840,7 +1845,8 @@ function AddService({
           )}
           <p className="footnote">
             После добавления: заявлено {number(totals.declared)}, на портале{" "}
-            {number(totals.portal)}, работают {number(totals.working)}, физ{" "}
+            {number(totals.portal)}, работают {number(totals.working)}, не
+            работает {number(totals.notWorking)}, физ{" "}
             {number(visibleMetrics(totals).individual)}, юр{" "}
             {number(visibleMetrics(totals).business)}, физ/юр{" "}
             {number(totals.both)}.

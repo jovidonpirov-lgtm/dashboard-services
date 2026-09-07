@@ -44,7 +44,7 @@ export const serviceSchema = z.object({
   name: z.string().trim().min(2).max(240),
   category: z.enum(serviceCategories).optional(),
   audience: z.enum(["individual", "business", "both"]),
-  status: z.enum(["working", "portal", "progress", "planned"]),
+  status: z.enum(["working", "notWorking", "portal", "progress", "planned"]),
 });
 export type Service = z.infer<typeof serviceSchema>;
 const count = z.number().int().min(0).max(1000000);
@@ -53,6 +53,7 @@ export const metricsSchema = z
     declared: count,
     portal: count.nullable().default(null),
     working: count,
+    notWorking: count.optional(),
     individual: count,
     business: count,
     both: count.nullable().default(null),
@@ -83,7 +84,7 @@ export const metricsSchema = z
 export type Metrics = z.infer<typeof metricsSchema>;
 export function serviceContribution(
   service?: Service,
-): Record<keyof Metrics, number> {
+): Record<Exclude<keyof Metrics, "notWorking">, number> {
   return {
     declared: service ? 1 : 0,
     portal: service && ["working", "portal"].includes(service.status) ? 1 : 0,
@@ -102,7 +103,7 @@ export function adjustServiceTotals(
   const old = serviceContribution(before),
     next = serviceContribution(after);
   return Object.fromEntries(
-    (Object.keys(next) as (keyof Metrics)[]).map((key) => [
+    (Object.keys(next) as (keyof typeof next)[]).map((key) => [
       key,
       metrics[key] == null ? null : metrics[key]! + next[key] - old[key],
     ]),
@@ -204,6 +205,7 @@ export const audienceLabels = {
 };
 export const statusLabels = {
   working: "Работает",
+  notWorking: "Не работает",
   portal: "На портале, не работает",
   progress: "В разработке",
   planned: "Запланирована",
@@ -240,6 +242,9 @@ export function compare(snapshots: Snapshot[], from: string, to: string) {
                 ? end.metrics.portal - baseline.metrics.portal
                 : null,
             working: end.metrics.working - baseline.metrics.working,
+            notWorking:
+              (end.metrics.notWorking ?? 0) -
+              (baseline.metrics.notWorking ?? 0),
             individual:
               end.metrics.both != null && baseline.metrics.both != null
                 ? end.metrics.individual -
@@ -349,7 +354,12 @@ export function registryMetrics(
     },
     { working: 0, individual: 0, business: 0, both: 0 },
   );
-  return { declared: base.declared, portal: base.portal, ...counts };
+  return {
+    declared: base.declared,
+    portal: base.portal,
+    ...counts,
+    notWorking: services.filter((s) => s.status === "notWorking").length,
+  };
 }
 export function registryStore(store: Store): Store {
   return {

@@ -465,7 +465,7 @@ main {
 }
 .metrics {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 17px;
   margin-bottom: 24px;
 }
@@ -2111,4 +2111,9 @@ td,
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.status-tag.notWorking {
+  color: #a33e35;
+  background: #fff0ee;
 }

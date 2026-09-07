@@ -578,6 +578,7 @@ test("54 unique services display as three exclusive groups and shared additions 
     declared: 1,
     portal: 1,
     working: 1,
+    notWorking: 0,
     individual: 0,
     business: 0,
     both: 1,
@@ -617,6 +618,7 @@ test("manual facts stay fixed while all derived counts come only from registered
   });
   assert.deepEqual(visibleMetrics(parsed.metrics), {
     ...facts,
+    notWorking: 0,
     working: 2,
     individual: 1,
     business: 1,
@@ -624,6 +626,7 @@ test("manual facts stay fixed while all derived counts come only from registered
   });
   assert.deepEqual(registryMetrics(facts, []), {
     ...facts,
+    notWorking: 0,
     working: 0,
     individual: 0,
     business: 0,
@@ -656,4 +659,44 @@ test("manual facts stay fixed while all derived counts come only from registered
     }).success,
     false,
   );
+});
+
+test("not-working status has its own count and transitions without changing manual facts", () => {
+  const facts = { declared: 116, portal: 49 };
+  const row: Service = {
+    id: "broken",
+    name: "Недоступная услуга",
+    audience: "both",
+    status: "notWorking",
+  };
+  const parsed = registrySaveSchema.parse({
+    ...input(),
+    metrics: { ...facts, notWorking: 999 },
+    services: [row],
+  });
+  assert.equal(parsed.metrics.notWorking, 1);
+  assert.equal(parsed.metrics.working, 0);
+  assert.equal(parsed.metrics.declared, 116);
+  assert.equal(parsed.metrics.portal, 49);
+  const repaired = registryMetrics(facts, [{ ...row, status: "working" }]);
+  assert.equal(repaired.notWorking, 0);
+  assert.equal(repaired.working, 1);
+  assert.equal(
+    registryMetrics(facts, [
+      { ...row, status: "planned" },
+      { ...row, id: "other", status: "progress" },
+    ]).notWorking,
+    0,
+  );
+  const a = {
+    ...snapshot("2026-09-01", 0),
+    metrics: parsed.metrics,
+    services: [row],
+  };
+  const b = {
+    ...snapshot("2026-09-02", 1),
+    metrics: repaired,
+    services: [{ ...row, status: "working" as const }],
+  };
+  assert.equal(compare([a, b], b.date, b.date).delta?.notWorking, -1);
 });
