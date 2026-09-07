@@ -1,0 +1,4 @@
+.env*
+local-access.txt
+.data/
+.git/
