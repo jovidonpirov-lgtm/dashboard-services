@@ -369,7 +369,7 @@ export const registrySaveSchema = z
     metrics: z.object({ declared: count, portal: count }),
     services: z.array(serviceSchema).max(10000),
   })
-  .transform((input) => ({
+  .transform((input): z.input<typeof saveSchema> => ({
     ...input,
     metrics: registryMetrics(input.metrics, input.services),
   }))
