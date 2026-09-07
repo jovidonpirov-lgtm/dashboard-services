@@ -4,6 +4,8 @@ import {
   applySave,
   adjustServiceTotals,
   audienceBreakdown,
+  visibleMetrics,
+  editVisibleMetric,
   serviceCategories,
   type Service,
   asOf,
@@ -528,4 +530,53 @@ test("all service categories persist in snapshots, old uncategorized services re
     }).success,
     false,
   );
+});
+
+test("54 unique services display as three exclusive groups and shared additions count once", () => {
+  const stored = {
+    declared: 54,
+    portal: 54,
+    working: 54,
+    individual: 34,
+    business: 44,
+    both: 24,
+  };
+  const view = visibleMetrics(stored);
+  assert.deepEqual([view.individual, view.business, view.both], [10, 20, 24]);
+  assert.equal(view.individual! + view.business! + view.both!, 54);
+  const service: Service = {
+    id: "shared",
+    name: "Общая услуга",
+    audience: "both",
+    status: "working",
+  };
+  const next = adjustServiceTotals(stored, undefined, service);
+  assert.deepEqual(visibleMetrics(next), {
+    declared: 55,
+    portal: 55,
+    working: 55,
+    individual: 10,
+    business: 20,
+    both: 25,
+  });
+  const changed = editVisibleMetric(stored, "both", 25);
+  assert.deepEqual(
+    [visibleMetrics(changed).individual, visibleMetrics(changed).business],
+    [10, 20],
+  );
+  assert.equal(
+    visibleMetrics(editVisibleMetric(stored, "individual", 11)).individual,
+    11,
+  );
+  assert.equal(stored.individual, 34);
+  const a = { ...snapshot("2026-09-01", 2), metrics: stored };
+  const b = { ...snapshot("2026-09-02", 2), metrics: next };
+  assert.deepEqual(compare([a, b], b.date, b.date).delta, {
+    declared: 1,
+    portal: 1,
+    working: 1,
+    individual: 0,
+    business: 0,
+    both: 1,
+  });
 });

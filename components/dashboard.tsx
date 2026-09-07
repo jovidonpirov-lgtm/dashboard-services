@@ -41,6 +41,8 @@ import {
   audienceBreakdown,
   serviceCategories,
   serviceSchema,
+  visibleMetrics,
+  editVisibleMetric,
   audienceLabels,
   compare,
   dateLabel,
@@ -73,7 +75,7 @@ const metricLabels: Record<keyof Metrics, string> = {
   working: "Работают",
   individual: "Физ",
   business: "Юр",
-  both: "Из них для физ и юр",
+  both: "Физ/Юр",
 };
 const sections = {
   overview: "Обзор",
@@ -601,7 +603,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
                           </span>
                         </div>
                         <div className="metric-value">
-                          {number(metrics[key])}
+                          {number(visibleMetrics(metrics)[key])}
                           {key === "working" && (
                             <span className="percentage">{completion}%</span>
                           )}
@@ -796,8 +798,8 @@ export default function Dashboard({ demo }: { demo: Store }) {
                   )}
                   <p className="footnote">
                     {metrics.both == null
-                      ? "Укажите «Из них для физ и юр» в общих цифрах, чтобы увидеть три группы. В этом отчёте пересечение ещё не задано."
-                      : "Три группы не пересекаются. Верхние показатели Физ и Юр включают общие услуги. Проценты — от заявленных услуг."}
+                      ? "Укажите число общих услуг в поле «Физ/Юр», чтобы определить отдельные группы. Для этого отчёта оно неизвестно."
+                      : "Каждая услуга входит только в одну группу: Физ, Юр или Физ/Юр. Общая услуга считается один раз. Проценты — от заявленных услуг."}
                   </p>
                 </section>
                 <section className="panel recent-panel">
@@ -1033,6 +1035,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
                         <th>Работают</th>
                         <th>Физ</th>
                         <th>Юр</th>
+                        <th>Физ/Юр</th>
                         <th>
                           <span className="sr-only">Действие</span>
                         </th>
@@ -1065,8 +1068,13 @@ export default function Dashboard({ demo }: { demo: Store }) {
                                 {number(s.metrics.working)}
                               </span>
                             </td>
-                            <td>{number(s.metrics.individual)}</td>
-                            <td>{number(s.metrics.business)}</td>
+                            <td>
+                              {number(visibleMetrics(s.metrics).individual)}
+                            </td>
+                            <td>
+                              {number(visibleMetrics(s.metrics).business)}
+                            </td>
+                            <td>{number(s.metrics.both)}</td>
                             <td>
                               <button
                                 className="icon-button"
@@ -1155,7 +1163,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
               {(Object.keys(metricLabels) as (keyof Metrics)[]).map((key) => (
                 <div key={key}>
                   <span>{metricLabels[key]}</span>
-                  <strong>{number(detail.metrics[key])}</strong>
+                  <strong>{number(visibleMetrics(detail.metrics)[key])}</strong>
                 </div>
               ))}
             </div>
@@ -1419,17 +1427,27 @@ function Editor({
                   min="0"
                   max="1000000"
                   step="1"
-                  value={Number.isNaN(metrics[key]) ? "" : (metrics[key] ?? "")}
+                  disabled={
+                    (key === "individual" || key === "business") &&
+                    metrics.both == null
+                  }
+                  value={
+                    Number.isNaN(visibleMetrics(metrics)[key])
+                      ? ""
+                      : (visibleMetrics(metrics)[key] ?? "")
+                  }
                   onChange={(e) => {
-                    setMetrics((m) => ({
-                      ...m,
-                      [key]:
+                    setMetrics((m) =>
+                      editVisibleMetric(
+                        m,
+                        key,
                         e.target.value === ""
                           ? key === "both"
                             ? null
                             : NaN
                           : Number(e.target.value),
-                    }));
+                      ),
+                    );
                     setDirty(true);
                   }}
                 />
@@ -1437,12 +1455,11 @@ function Editor({
             ))}
           </div>
           <p className="footnote">
-            «Из них для физ и юр» — услуги, входящие в оба показателя. Укажите
-            0, если общих нет; оставьте пустым, если число пока неизвестно. Все
-            пять итогов можно редактировать вручную. Новая услуга прибавляется к
-            этим цифрам автоматически. Существующие услуги уже учтены и повторно
-            не суммируются. Аудитории можно заполнять постепенно: их сумма не
-            обязана равняться заявленным услугам.
+            Физ — только для физлиц, Юр — только для юрлиц, Физ/Юр — для обеих
+            аудиторий. Одна услуга входит только в одну группу. Например, 10 Физ
+            + 20 Юр + 24 Физ/Юр = 54 услуги. Если число общих услуг неизвестно,
+            сначала укажите Физ/Юр (0, если общих нет). Новые услуги
+            прибавляются автоматически, существующие повторно не учитываются.
           </p>
           <div className="editor-section-heading">
             <h3>
@@ -1793,7 +1810,8 @@ function AddService({
           <p className="footnote">
             После добавления: заявлено {number(totals.declared)}, на портале{" "}
             {number(totals.portal)}, работают {number(totals.working)}, физ{" "}
-            {number(totals.individual)}, юр {number(totals.business)}, физ/юр{" "}
+            {number(visibleMetrics(totals).individual)}, юр{" "}
+            {number(visibleMetrics(totals).business)}, физ/юр{" "}
             {number(totals.both)}.
           </p>
           {error && (

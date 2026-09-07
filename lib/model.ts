@@ -71,7 +71,7 @@ export const metricsSchema = z
         m.individual + m.business - m.both <= m.declared),
     {
       message:
-        "Общих услуг не может быть больше Физ или Юр; уникальных услуг по аудиториям — больше заявленных.",
+        "Количество услуг по группам Физ, Юр и Физ/Юр не должно превышать заявленное. Проверьте значения групп.",
     },
   )
   .refine((m) => m.working <= m.declared, {
@@ -139,8 +139,7 @@ export const saveSchema = z
     )
       ctx.addIssue({
         code: "custom",
-        message:
-          "В реестре больше общих услуг, чем указано в поле «Из них для физ и юр».",
+        message: "В реестре больше общих услуг, чем указано в поле «Физ/Юр».",
       });
     if (
       data.metrics.portal != null &&
@@ -241,8 +240,18 @@ export function compare(snapshots: Snapshot[], from: string, to: string) {
                 ? end.metrics.portal - baseline.metrics.portal
                 : null,
             working: end.metrics.working - baseline.metrics.working,
-            individual: end.metrics.individual - baseline.metrics.individual,
-            business: end.metrics.business - baseline.metrics.business,
+            individual:
+              end.metrics.both != null && baseline.metrics.both != null
+                ? end.metrics.individual -
+                  end.metrics.both -
+                  (baseline.metrics.individual - baseline.metrics.both)
+                : null,
+            business:
+              end.metrics.both != null && baseline.metrics.both != null
+                ? end.metrics.business -
+                  end.metrics.both -
+                  (baseline.metrics.business - baseline.metrics.both)
+                : null,
             both:
               end.metrics.both != null && baseline.metrics.both != null
                 ? end.metrics.both - baseline.metrics.both
@@ -290,4 +299,36 @@ export function audienceBreakdown(metrics: Metrics) {
     },
     { key: "both", label: "Физлица и юрлица", value: metrics.both ?? null },
   ];
+}
+
+// Stored audience totals include shared services for compatibility with existing reports.
+// All user-facing counts are disjoint: individual only, business only, and shared.
+export function visibleMetrics(metrics: Metrics) {
+  return {
+    ...metrics,
+    individual: metrics.both == null ? null : metrics.individual - metrics.both,
+    business: metrics.both == null ? null : metrics.business - metrics.both,
+  };
+}
+export function editVisibleMetric(
+  metrics: Metrics,
+  key: keyof Metrics,
+  value: number | null,
+): Metrics {
+  if (key === "individual" || key === "business") {
+    return {
+      ...metrics,
+      [key]: value == null ? NaN : value + (metrics.both ?? 0),
+    };
+  }
+  if (key === "both" && value != null && metrics.both != null) {
+    const change = value - metrics.both;
+    return {
+      ...metrics,
+      both: value,
+      individual: metrics.individual + change,
+      business: metrics.business + change,
+    };
+  }
+  return { ...metrics, [key]: value };
 }

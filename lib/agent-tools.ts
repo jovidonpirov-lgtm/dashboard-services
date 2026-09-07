@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { compare, ordered, type Store } from "./model";
+import { visibleMetrics, compare, ordered, type Store } from "./model";
 export type ModelContext = {
   registerTool(
     tool: {
@@ -46,7 +46,7 @@ export function registerAnalysisTools(
         return {
           demo,
           reportDate: latest?.date ?? null,
-          metrics: latest?.metrics ?? null,
+          metrics: latest ? visibleMetrics(latest.metrics) : null,
           registeredServices: store.services.length,
         };
       },
