@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   applySave,
+  adjustServiceTotals,
+  type Service,
   asOf,
   compare,
   saveSchema,
@@ -242,4 +244,68 @@ test("portal history preserves unknown baseline and calculates known changes", (
   a.metrics.portal = 6;
   assert.equal(compare([a, b], b.date, b.date).delta?.portal, 2);
   assert.equal(a.metrics.portal, 6);
+});
+
+test("individual services accumulate on manual totals without recounting existing registry", () => {
+  const start = {
+    declared: 10,
+    portal: 8,
+    working: 6,
+    individual: 5,
+    business: 5,
+  };
+  const service: Service = {
+    id: "new",
+    name: "Новая услуга",
+    audience: "individual",
+    status: "working",
+  };
+  const added = adjustServiceTotals(start, undefined, service);
+  assert.deepEqual(added, {
+    declared: 11,
+    portal: 9,
+    working: 7,
+    individual: 6,
+    business: 5,
+  });
+  assert.deepEqual(
+    adjustServiceTotals(added, service, { ...service, name: "Другое имя" }),
+    added,
+  );
+  assert.deepEqual(adjustServiceTotals(added, service, undefined), start);
+  const changed = adjustServiceTotals(added, service, {
+    ...service,
+    audience: "both",
+    status: "portal",
+  });
+  assert.deepEqual(changed, {
+    declared: 11,
+    portal: 9,
+    working: 6,
+    individual: 6,
+    business: 6,
+  });
+  assert.deepEqual(
+    adjustServiceTotals({ ...added, declared: 100 }, service, {
+      ...service,
+      status: "planned",
+    }),
+    { declared: 100, portal: 8, working: 6, individual: 6, business: 5 },
+  );
+});
+test("adding services leaves missing historical portal counts unknown", () => {
+  const service: Service = {
+    id: "one",
+    name: "Услуга",
+    audience: "business",
+    status: "portal",
+  };
+  const added = adjustServiceTotals(
+    { declared: 10, portal: null, working: 2, individual: 5, business: 5 },
+    undefined,
+    service,
+  );
+  assert.equal(added.portal, null);
+  assert.equal(added.business, 6);
+  assert.equal(added.declared, 11);
 });

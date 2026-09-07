@@ -24,7 +24,7 @@ export const serviceSchema = z.object({
   id: z.string().trim().min(1).max(64),
   name: z.string().trim().min(2).max(240),
   audience: z.enum(["individual", "business", "both"]),
-  status: z.enum(["working", "progress", "planned"]),
+  status: z.enum(["working", "portal", "progress", "planned"]),
 });
 export type Service = z.infer<typeof serviceSchema>;
 const count = z.number().int().min(0).max(1000000);
@@ -54,6 +54,32 @@ export const metricsSchema = z
       "Распределите все заявленные услуги по аудиториям. Услуга может относиться к обеим.",
   });
 export type Metrics = z.infer<typeof metricsSchema>;
+export function serviceContribution(
+  service?: Service,
+): Omit<Metrics, "portal"> & { portal: number } {
+  return {
+    declared: service ? 1 : 0,
+    portal: service && ["working", "portal"].includes(service.status) ? 1 : 0,
+    working: service?.status === "working" ? 1 : 0,
+    individual: service && service.audience !== "business" ? 1 : 0,
+    business: service && service.audience !== "individual" ? 1 : 0,
+  };
+}
+// Apply only the edited service's difference; existing totals already include the registry.
+export function adjustServiceTotals(
+  metrics: Metrics,
+  before?: Service,
+  after?: Service,
+): Metrics {
+  const old = serviceContribution(before),
+    next = serviceContribution(after);
+  return Object.fromEntries(
+    (Object.keys(next) as (keyof Metrics)[]).map((key) => [
+      key,
+      metrics[key] == null ? null : metrics[key]! + next[key] - old[key],
+    ]),
+  ) as Metrics;
+}
 export type Snapshot = {
   id: string;
   date: string;
@@ -78,6 +104,16 @@ export const saveSchema = z
     services: z.array(serviceSchema).max(10000),
   })
   .superRefine((data, ctx) => {
+    if (
+      data.metrics.portal != null &&
+      data.services.filter(
+        (s) => s.status === "working" || s.status === "portal",
+      ).length > data.metrics.portal
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "В реестре больше услуг на портале, чем в общих цифрах.",
+      });
     if (data.metrics.portal == null)
       ctx.addIssue({
         code: "custom",
@@ -131,6 +167,7 @@ export const audienceLabels = {
 };
 export const statusLabels = {
   working: "Работает",
+  portal: "На портале, не работает",
   progress: "В разработке",
   planned: "Запланирована",
 };

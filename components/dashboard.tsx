@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import {
   asOf,
+  adjustServiceTotals,
   audienceLabels,
   compare,
   dateLabel,
@@ -1279,6 +1280,8 @@ function Editor({
   }
   function update(index: number, patch: Partial<Service>) {
     setDirty(true);
+    const before = services[index];
+    setMetrics((m) => adjustServiceTotals(m, before, { ...before, ...patch }));
     setServices((rows) =>
       rows.map((s, i) => (i === index ? { ...s, ...patch } : s)),
     );
@@ -1334,7 +1337,7 @@ function Editor({
               состояния — при необходимости исправьте его для выбранной даты.
             </div>
           )}
-          <h3>Основные показатели</h3>
+          <h3>Общие цифры</h3>
           <div className="form-metrics">
             {(Object.keys(metricLabels) as (keyof Metrics)[]).map((key) => (
               <label key={key} className="field">
@@ -1359,8 +1362,9 @@ function Editor({
             ))}
           </div>
           <p className="footnote">
-            Аудитории могут пересекаться. Итоговые цифры вводятся вручную;
-            реестр можно заполнять постепенно.
+            Все пять итогов можно редактировать вручную. Новая услуга
+            прибавляется к этим цифрам автоматически. Существующие услуги уже
+            учтены и повторно не суммируются. Физ и юр могут пересекаться.
           </p>
           <div className="editor-section-heading">
             <h3>
@@ -1371,15 +1375,14 @@ function Editor({
               type="button"
               className="secondary"
               onClick={() => {
-                setServices((s) => [
-                  ...s,
-                  {
-                    id: "",
-                    name: "",
-                    audience: "individual",
-                    status: "planned",
-                  },
-                ]);
+                const service: Service = {
+                  id: "",
+                  name: "",
+                  audience: "individual",
+                  status: "planned",
+                };
+                setServices((s) => [...s, service]);
+                setMetrics((m) => adjustServiceTotals(m, undefined, service));
                 setDirty(true);
               }}
             >
@@ -1389,9 +1392,15 @@ function Editor({
           </div>
           {services.length === 0 && (
             <div className="empty-small">
-              Добавьте первую услугу: ID, название, получатели и статус.
+              Добавьте услугу по ID и названию. Выберите получателей и статус —
+              общие цифры увеличатся автоматически.
             </div>
           )}
+          <p className="footnote">
+            Каждая новая услуга: +1 к заявленным и выбранной аудитории. Статус
+            «На портале» также добавляет +1 к порталу; «Работает» — к порталу и
+            работающим. При смене статуса или удалении суммы пересчитываются.
+          </p>
           <div className="service-editor-list">
             {services.map((s, i) => (
               <div className="service-editor-row" key={i}>
@@ -1453,6 +1462,7 @@ function Editor({
                   className="icon-button delete"
                   aria-label={`Убрать услугу ${s.name || i + 1} из нового отчёта`}
                   onClick={() => {
+                    setMetrics((m) => adjustServiceTotals(m, s, undefined));
                     setServices((rows) => rows.filter((_, n) => n !== i));
                     setDirty(true);
                   }}
