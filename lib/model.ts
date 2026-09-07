@@ -48,10 +48,6 @@ export const metricsSchema = z
   })
   .refine((m) => m.individual <= m.declared && m.business <= m.declared, {
     message: "Количество услуг по аудитории не может превышать заявленное.",
-  })
-  .refine((m) => m.individual + m.business >= m.declared, {
-    message:
-      "Распределите все заявленные услуги по аудиториям. Услуга может относиться к обеим.",
   });
 export type Metrics = z.infer<typeof metricsSchema>;
 export function serviceContribution(

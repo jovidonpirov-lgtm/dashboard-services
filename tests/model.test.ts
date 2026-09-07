@@ -116,7 +116,7 @@ test("negative, fractional and impossible metrics rejected", () => {
     { declared: 10, portal: 10, working: 11, individual: 6, business: 4 },
     { declared: -1, portal: 0, working: 0, individual: 0, business: 0 },
     { declared: 10, portal: 10, working: 1.5, individual: 6, business: 4 },
-    { declared: 10, portal: 10, working: 1, individual: 4, business: 4 },
+    { declared: 10, portal: 10, working: 1, individual: 11, business: 4 },
   ])
     assert.equal(saveSchema.safeParse({ ...input(), metrics }).success, false);
 });
@@ -308,4 +308,44 @@ test("adding services leaves missing historical portal counts unknown", () => {
   assert.equal(added.portal, null);
   assert.equal(added.business, 6);
   assert.equal(added.declared, 11);
+});
+
+test("partial audience figures from the report can be saved", () => {
+  assert.equal(
+    saveSchema.safeParse({
+      ...input(),
+      metrics: {
+        declared: 116,
+        portal: 59,
+        working: 36,
+        individual: 10,
+        business: 26,
+      },
+    }).success,
+    true,
+  );
+});
+test("both audiences count once in service totals and once in each audience", () => {
+  const service: Service = {
+    id: "both",
+    name: "Общая услуга",
+    audience: "both",
+    status: "working",
+  };
+  const metrics = adjustServiceTotals(
+    { declared: 0, portal: 0, working: 0, individual: 0, business: 0 },
+    undefined,
+    service,
+  );
+  assert.deepEqual(metrics, {
+    declared: 1,
+    portal: 1,
+    working: 1,
+    individual: 1,
+    business: 1,
+  });
+  assert.equal(
+    saveSchema.safeParse({ ...input(), metrics, services: [service] }).success,
+    true,
+  );
 });
