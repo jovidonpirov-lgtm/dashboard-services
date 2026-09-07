@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAdmin, sameOrigin } from "@/lib/auth";
 import { readStore, saveStore } from "@/lib/storage";
-import { saveSchema } from "@/lib/model";
+import { registrySaveSchema, registryStore } from "@/lib/model";
 export const dynamic = "force-dynamic";
 export async function GET() {
   if (!(await isAdmin()))
@@ -10,7 +10,7 @@ export async function GET() {
       { status: 401 },
     );
   try {
-    return NextResponse.json(await readStore(), {
+    return NextResponse.json(registryStore(await readStore()), {
       headers: { "Cache-Control": "no-store" },
     });
   } catch {
@@ -41,13 +41,13 @@ export async function POST(request: Request) {
         { error: "Объём отчёта превышает 2 МБ." },
         { status: 413 },
       );
-    const parsed = saveSchema.safeParse(JSON.parse(text));
+    const parsed = registrySaveSchema.safeParse(JSON.parse(text));
     if (!parsed.success)
       return NextResponse.json(
         { error: parsed.error.issues[0].message },
         { status: 400 },
       );
-    return NextResponse.json(await saveStore(parsed.data));
+    return NextResponse.json(registryStore(await saveStore(parsed.data)));
   } catch (error) {
     if (error instanceof Error && error.message === "CONFLICT")
       return NextResponse.json(

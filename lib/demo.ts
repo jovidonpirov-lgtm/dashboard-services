@@ -1,4 +1,10 @@
-import { shiftDay, today, type Store, type Service } from "./model";
+import {
+  registryStore,
+  shiftDay,
+  today,
+  type Store,
+  type Service,
+} from "./model";
 export function demoStore(): Store {
   const services: Service[] = [
     ["001", "Выдача справки о месте жительства", "individual", "working"],
@@ -65,5 +71,5 @@ export function demoStore(): Store {
   for (const s of snapshots)
     s.metrics.business = s.metrics.declared - s.metrics.individual + 20;
   for (const s of snapshots) s.metrics.both = 20;
-  return { revision: 0, services, snapshots };
+  return registryStore({ revision: 0, services, snapshots });
 }

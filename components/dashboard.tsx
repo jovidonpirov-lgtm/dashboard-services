@@ -37,7 +37,8 @@ import {
 } from "lucide-react";
 import {
   asOf,
-  adjustServiceTotals,
+  registryMetrics,
+  registrySaveSchema,
   audienceBreakdown,
   serviceCategories,
   serviceSchema,
@@ -47,7 +48,6 @@ import {
   compare,
   dateLabel,
   ordered,
-  saveSchema,
   shiftDay,
   statusLabels,
   today,
@@ -608,6 +608,22 @@ export default function Dashboard({ demo }: { demo: Store }) {
                             <span className="percentage">{completion}%</span>
                           )}
                         </div>
+                        {key === "portal" && (
+                          <p className="footnote">
+                            {metrics.portal != null && metrics.declared > 0
+                              ? `${Math.round((metrics.portal / metrics.declared) * 100)}% от заявленных`
+                              : "— от заявленных"}
+                          </p>
+                        )}
+                        {key === "working" && (
+                          <p className="footnote">
+                            {completion}% от заявленных ·{" "}
+                            {metrics.portal
+                              ? `${Math.round((metrics.working / metrics.portal) * 100)}%`
+                              : "—"}{" "}
+                            от портала
+                          </p>
+                        )}
                         <Change
                           value={daily.delta?.[key] ?? null}
                           label="за сегодня"
@@ -1136,7 +1152,9 @@ export default function Dashboard({ demo }: { demo: Store }) {
           onSaved={(data) => {
             setStore(data);
             setAdding(false);
-            setToast("Услуга добавлена. Общие цифры и история обновлены.");
+            setToast(
+              "Услуга добавлена. Расчётные показатели и история обновлены.",
+            );
           }}
         />
       )}
@@ -1343,7 +1361,9 @@ function Editor({
   onSaved: (store: Store) => void;
 }) {
   const latest = ordered(store.snapshots).at(-1);
-  const [metrics, setMetrics] = useState<Metrics>(latest?.metrics ?? zero),
+  const [metrics, setMetrics] = useState<Metrics>(
+      registryMetrics(latest?.metrics ?? zero, store.services),
+    ),
     [services, setServices] = useState<Service[]>(
       store.services.map((s) => ({ ...s })),
     ),
@@ -1359,8 +1379,12 @@ function Editor({
   }
   function update(index: number, patch: Partial<Service>) {
     setDirty(true);
-    const before = services[index];
-    setMetrics((m) => adjustServiceTotals(m, before, { ...before, ...patch }));
+    setMetrics((m) =>
+      registryMetrics(
+        m,
+        services.map((s, i) => (i === index ? { ...s, ...patch } : s)),
+      ),
+    );
     setServices((rows) =>
       rows.map((s, i) => (i === index ? { ...s, ...patch } : s)),
     );
@@ -1369,7 +1393,7 @@ function Editor({
     e.preventDefault();
     setError("");
     const input = { revision: store.revision, date, note, metrics, services };
-    const result = saveSchema.safeParse(input);
+    const result = registrySaveSchema.safeParse(input);
     if (!result.success) {
       setError(result.error.issues[0].message);
       return;
@@ -1422,15 +1446,13 @@ function Editor({
               <label key={key} className="field">
                 {metricLabels[key]}
                 <input
-                  required={key !== "both"}
+                  required={key === "declared" || key === "portal"}
                   type="number"
                   min="0"
                   max="1000000"
                   step="1"
-                  disabled={
-                    (key === "individual" || key === "business") &&
-                    metrics.both == null
-                  }
+                  readOnly={key !== "declared" && key !== "portal"}
+                  aria-label={`${metricLabels[key]}${key !== "declared" && key !== "portal" ? ": рассчитано по реестру" : ""}`}
                   value={
                     Number.isNaN(visibleMetrics(metrics)[key])
                       ? ""
@@ -1455,11 +1477,10 @@ function Editor({
             ))}
           </div>
           <p className="footnote">
-            Физ — только для физлиц, Юр — только для юрлиц, Физ/Юр — для обеих
-            аудиторий. Одна услуга входит только в одну группу. Например, 10 Физ
-            + 20 Юр + 24 Физ/Юр = 54 услуги. Если число общих услуг неизвестно,
-            сначала укажите Физ/Юр (0, если общих нет). Новые услуги
-            прибавляются автоматически, существующие повторно не учитываются.
+            Вручную задаются только «Заявлено услуг» и «На портале». «Работают»
+            — число записей со статусом «Работает»; Физ, Юр и Физ/Юр — отдельные
+            группы добавленных услуг. Добавление, изменение и удаление записей
+            пересчитывает эти четыре показателя, не меняя ручные значения.
           </p>
           <div className="editor-section-heading">
             <h3>
@@ -1477,7 +1498,7 @@ function Editor({
                   status: "planned",
                 };
                 setServices((s) => [...s, service]);
-                setMetrics((m) => adjustServiceTotals(m, undefined, service));
+                setMetrics((m) => registryMetrics(m, [...services, service]));
                 setDirty(true);
               }}
             >
@@ -1488,13 +1509,14 @@ function Editor({
           {services.length === 0 && (
             <div className="empty-small">
               Добавьте услугу по названию. ID можно оставить пустым. Выберите
-              получателей и статус — общие цифры увеличатся автоматически.
+              получателей и статус — расчётные показатели обновятся
+              автоматически.
             </div>
           )}
           <p className="footnote">
-            Каждая новая услуга: +1 к заявленным и выбранной аудитории. Статус
-            «На портале» также добавляет +1 к порталу; «Работает» — к порталу и
-            работающим. При смене статуса или удалении суммы пересчитываются.
+            Каждая запись учитывается один раз в своей группе получателей.
+            Только статус «Работает» увеличивает число работающих услуг.
+            Заявлено и На портале остаются заданными вручную.
           </p>
           <div className="service-editor-list">
             {services.map((s, i) => (
@@ -1556,7 +1578,12 @@ function Editor({
                   className="icon-button delete"
                   aria-label={`Убрать услугу ${s.name || i + 1} из нового отчёта`}
                   onClick={() => {
-                    setMetrics((m) => adjustServiceTotals(m, s, undefined));
+                    setMetrics((m) =>
+                      registryMetrics(
+                        m,
+                        services.filter((_, n) => n !== i),
+                      ),
+                    );
                     setServices((rows) => rows.filter((_, n) => n !== i));
                     setDirty(true);
                   }}
@@ -1667,7 +1694,10 @@ function AddService({
   const latest = ordered(store.snapshots).at(-1);
   const base = latest?.metrics ?? zero;
   const [portal, setPortal] = useState<number | null>(base.portal ?? null);
-  const totals = adjustServiceTotals({ ...base, portal }, undefined, service);
+  const totals = registryMetrics({ ...base, portal }, [
+    ...store.services,
+    service,
+  ]);
   function update(patch: Partial<Service>) {
     setService((s) => ({ ...s, ...patch }));
     setDirty(true);
@@ -1685,7 +1715,7 @@ function AddService({
       setError("Введите название услуги и проверьте остальные поля.");
       return;
     }
-    const input = saveSchema.safeParse({
+    const input = registrySaveSchema.safeParse({
       revision: store.revision,
       date: today(),
       note: `Добавлена услуга: ${parsedService.data.name}`,
@@ -1715,7 +1745,8 @@ function AddService({
       <form onSubmit={submit}>
         <div className="modal-body">
           <p className="muted">
-            Добавьте одну услугу. Общие цифры увеличатся автоматически, запись
+            Добавьте одну услугу. Работающие услуги и группы получателей
+            пересчитаются. Заявлено и На портале останутся прежними. Запись
             сохранится в истории за сегодня.
           </p>
           <label className="field">

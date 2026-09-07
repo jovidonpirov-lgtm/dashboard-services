@@ -332,3 +332,45 @@ export function editVisibleMetric(
   }
   return { ...metrics, [key]: value };
 }
+
+export function registryMetrics(
+  base: Pick<Metrics, "declared" | "portal">,
+  services: Service[],
+): Metrics {
+  const counts = services.reduce(
+    (sum, service) => {
+      const item = serviceContribution(service);
+      return {
+        working: sum.working + item.working,
+        individual: sum.individual + item.individual,
+        business: sum.business + item.business,
+        both: sum.both + item.both,
+      };
+    },
+    { working: 0, individual: 0, business: 0, both: 0 },
+  );
+  return { declared: base.declared, portal: base.portal, ...counts };
+}
+export function registryStore(store: Store): Store {
+  return {
+    ...store,
+    snapshots: store.snapshots.map((snapshot) => ({
+      ...snapshot,
+      metrics: registryMetrics(snapshot.metrics, snapshot.services),
+    })),
+  };
+}
+// Accept only the two manual facts; recompute everything else on the server.
+export const registrySaveSchema = z
+  .object({
+    revision: z.number().int().min(0),
+    date: z.string(),
+    note: z.string(),
+    metrics: z.object({ declared: count, portal: count }),
+    services: z.array(serviceSchema).max(10000),
+  })
+  .transform((input) => ({
+    ...input,
+    metrics: registryMetrics(input.metrics, input.services),
+  }))
+  .pipe(saveSchema);

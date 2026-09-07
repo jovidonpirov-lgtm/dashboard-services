@@ -5,6 +5,9 @@ import {
   adjustServiceTotals,
   audienceBreakdown,
   visibleMetrics,
+  registryMetrics,
+  registrySaveSchema,
+  registryStore,
   editVisibleMetric,
   serviceCategories,
   type Service,
@@ -579,4 +582,78 @@ test("54 unique services display as three exclusive groups and shared additions 
     business: 0,
     both: 1,
   });
+});
+
+test("manual facts stay fixed while all derived counts come only from registered services", () => {
+  const facts = { declared: 116, portal: 54 };
+  const shared: Service = {
+    id: "a",
+    name: "Общая",
+    audience: "both",
+    status: "working",
+  };
+  const physical: Service = {
+    id: "b",
+    name: "Физическая",
+    audience: "individual",
+    status: "planned",
+  };
+  const business: Service = {
+    id: "c",
+    name: "Юридическая",
+    audience: "business",
+    status: "working",
+  };
+  const parsed = registrySaveSchema.parse({
+    ...input(),
+    metrics: {
+      ...facts,
+      working: 999,
+      individual: 999,
+      business: 999,
+      both: 999,
+    },
+    services: [shared, physical, business],
+  });
+  assert.deepEqual(visibleMetrics(parsed.metrics), {
+    ...facts,
+    working: 2,
+    individual: 1,
+    business: 1,
+    both: 1,
+  });
+  assert.deepEqual(registryMetrics(facts, []), {
+    ...facts,
+    working: 0,
+    individual: 0,
+    business: 0,
+    both: 0,
+  });
+  const changed = registryMetrics(facts, [
+    shared,
+    { ...physical, status: "working" },
+    business,
+  ]);
+  assert.equal(changed.working, 3);
+  assert.equal(changed.declared, 116);
+  assert.equal(changed.portal, 54);
+  const removed = registryMetrics(facts, [physical, business]);
+  assert.equal(removed.working, 1);
+  assert.equal(removed.both, 0);
+  assert.equal(removed.portal, 54);
+  const legacy = {
+    revision: 1,
+    services: [shared],
+    snapshots: [{ ...snapshot("2026-09-01", 9), services: [shared] }],
+  };
+  assert.equal(registryStore(legacy).snapshots[0].metrics.working, 1);
+  assert.equal(legacy.snapshots[0].metrics.working, 9);
+  assert.equal(
+    registrySaveSchema.safeParse({
+      ...input(),
+      metrics: { declared: 116, portal: 0 },
+      services: [shared],
+    }).success,
+    false,
+  );
 });

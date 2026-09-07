@@ -150,7 +150,7 @@ try {
   const invalid = await request(
     "/api/data",
     "POST",
-    { ...payload, metrics: { ...payload.metrics, working: 3 } },
+    { ...payload, metrics: { ...payload.metrics, portal: 3 } },
     cookie,
   );
   assert.equal(invalid.status, 400);
