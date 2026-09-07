@@ -2125,3 +2125,38 @@ td,
 .primary.danger-action:hover {
   background: #882e26;
 }
+
+button.metric-card {
+  text-align: left;
+  width: 100%;
+  display: block;
+  cursor: pointer;
+  font: inherit;
+}
+button.metric-card:hover {
+  box-shadow: 0 3px 12px #163b3310;
+  border-color: #9ebeb0;
+}
+button.metric-card:focus-visible {
+  outline: 3px solid #459b80;
+  outline-offset: 3px;
+}
+.metric-card.unavailable {
+  background: #fff3f1;
+  border-color: #f1c9c4;
+}
+.unavailable .metric-label {
+  color: #a05b54;
+}
+.unavailable .metric-icon {
+  color: #c06559;
+  background: #fbe2dd;
+}
+.unavailable .metric-value {
+  color: #b24e43;
+}
+.registry-note {
+  padding: 0 24px;
+  color: #6c7a83;
+  font-size: 13px;
+}

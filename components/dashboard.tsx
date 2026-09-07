@@ -38,6 +38,8 @@ import {
 import {
   asOf,
   registryMetrics,
+  metricFilters,
+  matchesRegistryFilters,
   registrySaveSchema,
   audienceBreakdown,
   serviceCategories,
@@ -74,7 +76,7 @@ const metricLabels: Record<keyof Metrics, string> = {
   declared: "Заявлено услуг",
   portal: "На портале",
   working: "Работают",
-  notWorking: "Не работает",
+  notWorking: "Не работают",
   individual: "Физ",
   business: "Юр",
   both: "Физ/Юр",
@@ -396,11 +398,18 @@ export default function Dashboard({ demo }: { demo: Store }) {
   const filtered = store.services.filter(
     (s) =>
       (s.name + " " + s.id).toLowerCase().includes(query.toLowerCase()) &&
-      (status === "all" || s.status === status) &&
+      matchesRegistryFilters(s, status, audience) &&
       (category === "all" ||
-        (category === "none" ? !s.category : s.category === category)) &&
-      (audience === "all" || s.audience === audience || s.audience === "both"),
+        (category === "none" ? !s.category : s.category === category)),
   );
+  function openMetric(key: keyof Metrics) {
+    const filters = metricFilters(key);
+    setQuery("");
+    setCategory("all");
+    setStatus(filters.status);
+    setAudience(filters.audience);
+    setSection("services");
+  }
   function changeRange(value: string) {
     setRange(value);
     if (value !== "custom") {
@@ -596,9 +605,12 @@ export default function Dashboard({ demo }: { demo: Store }) {
                       UsersRound,
                     ][i];
                     return (
-                      <article
+                      <button
+                        type="button"
+                        onClick={() => openMetric(key)}
+                        aria-label={`Просмотреть услуги: ${metricLabels[key]}`}
                         key={key}
-                        className={`metric-card ${key === "working" ? "featured" : ""}`}
+                        className={`metric-card ${key === "working" ? "featured" : key === "notWorking" ? "unavailable" : ""}`}
                       >
                         <div className="metric-label">
                           {key === "both" ? "Физ/Юр" : metricLabels[key]}
@@ -637,7 +649,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
                             <span style={{ width: `${completion}%` }} />
                           </div>
                         )}
-                      </article>
+                      </button>
                     );
                   },
                 )}
@@ -899,6 +911,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
                     onChange={(e) => setStatus(e.target.value)}
                   >
                     <option value="all">Все статусы</option>
+                    <option value="onPortal">На портале (реестр)</option>
                     {Object.entries(statusLabels).map(([v, l]) => (
                       <option key={v} value={v}>
                         {l}
@@ -912,8 +925,9 @@ export default function Dashboard({ demo }: { demo: Store }) {
                   onChange={(e) => setAudience(e.target.value)}
                 >
                   <option value="all">Все получатели</option>
-                  <option value="individual">Физические лица</option>
-                  <option value="business">Юридические лица</option>
+                  <option value="individual">Только физические лица</option>
+                  <option value="business">Только юридические лица</option>
+                  <option value="both">Физлица и юрлица</option>
                 </select>
                 <select
                   aria-label="Категория услуги"
@@ -929,6 +943,14 @@ export default function Dashboard({ demo }: { demo: Store }) {
                   ))}
                 </select>
               </div>
+              {(status === "onPortal" ||
+                (status === "all" && audience === "all")) && (
+                <p className="registry-note">
+                  Показаны услуги, добавленные в реестр. Ручные показатели
+                  «Заявлено» и «На портале» могут быть больше количества
+                  заполненных записей.
+                </p>
+              )}
               <ServiceTable
                 services={filtered}
                 onEdit={admin ? requestEdit : undefined}
@@ -1054,7 +1076,7 @@ export default function Dashboard({ demo }: { demo: Store }) {
                         <th>Заявлено</th>
                         <th>На портале</th>
                         <th>Работают</th>
-                        <th>Не работает</th>
+                        <th>Не работают</th>
                         <th>Физ</th>
                         <th>Юр</th>
                         <th>Физ/Юр</th>

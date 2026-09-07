@@ -384,3 +384,30 @@ export const registrySaveSchema = z
     metrics: registryMetrics(input.metrics, input.services),
   }))
   .pipe(saveSchema);
+
+export function matchesRegistryFilters(
+  service: Service,
+  status: string,
+  audience: string,
+) {
+  const matchesStatus =
+    status === "all" ||
+    (status === "onPortal"
+      ? ["working", "portal", "notWorking"].includes(service.status)
+      : service.status === status);
+  return matchesStatus && (audience === "all" || service.audience === audience);
+}
+export function metricFilters(key: keyof Metrics) {
+  return {
+    status:
+      key === "portal"
+        ? "onPortal"
+        : key === "working" || key === "notWorking"
+          ? key
+          : "all",
+    audience:
+      key === "individual" || key === "business" || key === "both"
+        ? key
+        : "all",
+  };
+}

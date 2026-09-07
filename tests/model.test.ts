@@ -6,6 +6,8 @@ import {
   audienceBreakdown,
   visibleMetrics,
   registryMetrics,
+  metricFilters,
+  matchesRegistryFilters,
   registrySaveSchema,
   registryStore,
   editVisibleMetric,
@@ -743,4 +745,30 @@ test("deleting the last service clears derived totals and preserves facts and pr
     () => applySave(next, deletion, "stale", new Date().toISOString()),
     /CONFLICT/,
   );
+});
+
+test("metric card filters use exact audience groups and portal status membership", () => {
+  const rows: Service[] = [
+    { id: "a", name: "Физ", audience: "individual", status: "working" },
+    { id: "b", name: "Юр", audience: "business", status: "notWorking" },
+    { id: "c", name: "Общая", audience: "both", status: "portal" },
+    { id: "d", name: "План", audience: "both", status: "planned" },
+  ];
+  for (const [key, ids] of Object.entries({
+    declared: ["a", "b", "c", "d"],
+    portal: ["a", "b", "c"],
+    working: ["a"],
+    notWorking: ["b"],
+    individual: ["a"],
+    business: ["b"],
+    both: ["c", "d"],
+  })) {
+    const f = metricFilters(key as Parameters<typeof metricFilters>[0]);
+    assert.deepEqual(
+      rows
+        .filter((s) => matchesRegistryFilters(s, f.status, f.audience))
+        .map((s) => s.id),
+      ids,
+    );
+  }
 });
