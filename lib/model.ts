@@ -21,7 +21,12 @@ export function dateLabel(date: string, long = false) {
   });
 }
 export const serviceSchema = z.object({
-  id: z.string().trim().min(1).max(64),
+  id: z
+    .string()
+    .trim()
+    .max(64)
+    .optional()
+    .transform((id) => id || crypto.randomUUID()),
   name: z.string().trim().min(2).max(240),
   audience: z.enum(["individual", "business", "both"]),
   status: z.enum(["working", "portal", "progress", "planned"]),

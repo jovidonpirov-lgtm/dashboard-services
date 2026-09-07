@@ -1409,8 +1409,8 @@ function Editor({
           </div>
           {services.length === 0 && (
             <div className="empty-small">
-              Добавьте услугу по ID и названию. Выберите получателей и статус —
-              общие цифры увеличатся автоматически.
+              Добавьте услугу по названию. ID можно оставить пустым. Выберите
+              получателей и статус — общие цифры увеличатся автоматически.
             </div>
           )}
           <p className="footnote">
@@ -1422,12 +1422,11 @@ function Editor({
             {services.map((s, i) => (
               <div className="service-editor-row" key={i}>
                 <label className="field">
-                  ID
+                  ID (необязательно)
                   <input
-                    required
                     maxLength={64}
                     value={s.id}
-                    placeholder="S-001"
+                    placeholder="Авто"
                     onChange={(e) => update(i, { id: e.target.value })}
                   />
                 </label>

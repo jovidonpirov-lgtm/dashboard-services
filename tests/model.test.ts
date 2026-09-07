@@ -468,3 +468,20 @@ test("audience groups partition overlapping totals without double counting", () 
   a.metrics.both = null;
   assert.equal(compare([a, b], b.date, b.date).delta?.both, null);
 });
+
+test("service IDs are generated for blank or omitted input and supplied IDs are preserved", () => {
+  const row = {
+    name: "Электронная подпись",
+    audience: "individual",
+    status: "planned",
+  };
+  const result = saveSchema.parse({
+    ...input(),
+    services: [{ ...row }, { ...row, id: "  " }, { ...row, id: " custom-id " }],
+  });
+  assert.equal(new Set(result.services.map((s) => s.id)).size, 3);
+  assert.ok(result.services[0].id.length > 0);
+  assert.ok(result.services[1].id.length > 0);
+  assert.equal(result.services[2].id, "custom-id");
+  assert.deepEqual(saveSchema.parse(result).services, result.services);
+});
