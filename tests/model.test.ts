@@ -581,6 +581,7 @@ test("54 unique services display as three exclusive groups and shared additions 
     portal: 1,
     working: 1,
     notWorking: 0,
+    progress: 0,
     individual: 0,
     business: 0,
     both: 1,

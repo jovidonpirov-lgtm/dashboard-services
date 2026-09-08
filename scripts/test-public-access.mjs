@@ -33,12 +33,16 @@ const cookie = login.headers
 assert.ok(cookie);
 const admin = await (await req("/api/auth", "GET", undefined, cookie)).json();
 assert.equal(admin.admin, true);
-assert.deepEqual(
-  await (await req("/api/data", "GET", undefined, cookie)).json(),
-  before,
-);
+const privateData = await (await req("/api/data", "GET", undefined, cookie)).json();
+assert.equal(privateData.revision, before.revision);
+assert.equal(privateData.services.length, before.services.length);
+for (const service of [...before.services, ...before.snapshots.flatMap((s) => s.services)]) {
+  assert.equal("pricing" in service, false);
+  assert.equal("audiencePricing" in service, false);
+  assert.equal("sources" in (service.work ?? {}), false);
+}
 assert.equal((await req("/api/auth", "DELETE", undefined, cookie)).status, 200);
 assert.deepEqual(await (await req("/api/data")).json(), before);
 console.log(
-  "Public and admin data match; logout preserves access; anonymous and forged writes rejected; data unchanged.",
+  "Public counts match admin; confidential fields are absent; logout preserves public access; anonymous and forged writes rejected; data unchanged.",
 );

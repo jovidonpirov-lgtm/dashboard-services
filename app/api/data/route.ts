@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { isAdmin, sameOrigin } from "@/lib/auth";
 import { readStore, saveStore } from "@/lib/storage";
 import { registrySaveSchema, registryStore } from "@/lib/model";
+import { publicStore } from "@/lib/public-data";
 export const dynamic = "force-dynamic";
 export async function GET() {
   try {
-    return NextResponse.json(registryStore(await readStore()), {
-      headers: { "Cache-Control": "no-store" },
+    const store = registryStore(await readStore());
+    const admin = await isAdmin();
+    return NextResponse.json(admin ? store : publicStore(store), {
+      headers: { "Cache-Control": "private, no-store", Vary: "Cookie" },
     });
   } catch {
     return NextResponse.json(

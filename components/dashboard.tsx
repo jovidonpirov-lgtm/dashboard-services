@@ -1,5 +1,7 @@
 "use client";
 import { ServicePricingFields, PricingPanel, PriceLabel } from "./pricing";
+import { WorkFields, WorkDetails } from "./service-work";
+import { publicStore } from "@/lib/public-data";
 import {
   useEffect,
   useMemo,
@@ -87,6 +89,7 @@ const metricLabels: Record<keyof Metrics, string> = {
   portal: "На портале",
   working: "Работают",
   notWorking: "Не работают",
+  progress: "В работе",
   individual: "Физ",
   business: "Юр",
   both: "Физ/Юр",
@@ -364,6 +367,7 @@ export default function Dashboard({
     [editor, setEditor] = useState(false),
     [adding, setAdding] = useState(false),
     [editingService, setEditingService] = useState<Service | null>(null),
+    [viewingService, setViewingService] = useState<Service | null>(null),
     [pendingEdit, setPendingEdit] = useState(false),
     [deleting, setDeleting] = useState<Service | null>(null),
     [fileService, setFileService] = useState<{
@@ -444,6 +448,34 @@ export default function Dashboard({
     updateSection(next);
     window.location.hash = next;
   }
+  useEffect(() => {
+    if (!admin) return;
+    let active = true;
+    const check = async () => {
+      try {
+        const auth = await api("/api/auth");
+        if (active && !auth.admin) {
+          setAdmin(false);
+          setStore((current) => publicStore(current));
+          setDetail(null);
+          setViewingService(null);
+          setEditingService(null);
+          setEditor(false);
+          setAdding(false);
+          setFileService(null);
+        }
+      } catch {
+        /* An unavailable connection does not grant a new session. */
+      }
+    };
+    window.addEventListener("focus", check);
+    const timer = window.setInterval(check, 60000);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", check);
+      window.clearInterval(timer);
+    };
+  }, [admin]);
   const [payment, setPayment] = useState("all");
   function resetFilters() {
     setQuery("");
@@ -497,6 +529,13 @@ export default function Dashboard({
   async function logout() {
     try {
       await api("/api/auth", { method: "DELETE" });
+      setStore((current) => publicStore(current));
+      setDetail(null);
+      setEditingService(null);
+      setViewingService(null);
+      setEditor(false);
+      setAdding(false);
+      setFileService(null);
       setAdmin(false);
       setSection("overview");
       setToast("Вы вышли из аккаунта. Просмотр данных остаётся доступным.");
@@ -557,6 +596,7 @@ export default function Dashboard({
         <div className="nav-caption">РАБОЧЕЕ ПРОСТРАНСТВО</div>
         <nav aria-label="Главная навигация">
           {(Object.keys(sections) as Section[]).map((key) => {
+            if (key === "pricing" && !admin) return null;
             const Icon =
               key === "overview"
                 ? LayoutDashboard
@@ -698,7 +738,10 @@ export default function Dashboard({
           </div>
           {section === "overview" && (
             <>
-              <section className="metrics" aria-label="Основные показатели">
+              <section
+                className={`metrics ${admin ? "with-finance" : ""}`}
+                aria-label="Основные показатели"
+              >
                 {(Object.keys(metricLabels) as (keyof Metrics)[]).map(
                   (key, i) => {
                     const Icon = [
@@ -706,6 +749,7 @@ export default function Dashboard({
                       Globe,
                       CheckCheck,
                       CircleHelp,
+                      Clock3,
                       UsersRound,
                       Building2,
                       UsersRound,
@@ -716,7 +760,7 @@ export default function Dashboard({
                         onClick={() => openMetric(key)}
                         aria-label={`Просмотреть услуги: ${metricLabels[key]}`}
                         key={key}
-                        className={`metric-card ${key === "working" ? "featured" : key === "notWorking" ? "unavailable" : ""}`}
+                        className={`metric-card ${key === "working" ? "featured" : key === "notWorking" ? "unavailable" : key === "progress" ? "in-progress" : ""}`}
                       >
                         <div className="metric-label">
                           {key === "both" ? "Физ/Юр" : metricLabels[key]}
@@ -725,7 +769,11 @@ export default function Dashboard({
                           </span>
                         </div>
                         <div className="metric-value">
-                          {number(visibleMetrics(metrics)[key])}
+                          {number(
+                            key === "progress"
+                              ? (metrics.progress ?? 0)
+                              : visibleMetrics(metrics)[key],
+                          )}
                           {key === "working" && (
                             <span className="percentage">{completion}%</span>
                           )}
@@ -760,54 +808,65 @@ export default function Dashboard({
                     );
                   },
                 )}
-                <article
-                  className="metric-card payment-card"
-                  aria-label="Оплата услуг"
-                >
-                  <button
-                    type="button"
-                    className="metric-label payment-heading"
-                    onClick={() => setSection("pricing")}
-                    aria-label="Открыть оплату услуг и цены"
+                {admin && (
+                  <article
+                    className="metric-card payment-card"
+                    aria-label="Оплата услуг"
                   >
-                    Оплата услуг
-                    <span className="metric-icon">
-                      <Coins size={19} />
-                    </span>
-                  </button>
-                  <div className="payment-totals">
-                    {(["paid", "free"] as const).map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        aria-label={`Открыть тарифы: ${value === "paid" ? "платные" : "бесплатные"} услуги`}
-                        onClick={() => {
-                          resetFilters();
-                          setSection("pricing");
-                        }}
-                      >
-                        <strong>{number(payments[value])}</strong>
-                        <span>{value === "paid" ? "Платно" : "Бесплатно"}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    className="payment-unknown"
-                    onClick={() => {
-                      resetFilters();
-                      setSection("pricing");
-                    }}
-                  >
-                    Не указано: {number(payments.unknown)}
-                  </button>
-                  <button
-                    className="payment-open"
-                    onClick={() => setSection("pricing")}
-                  >
-                    Тарифы и расчёт <ArrowUpRight size={15} />
-                  </button>
-                </article>
+                    <button
+                      type="button"
+                      className="metric-label payment-heading"
+                      onClick={() => setSection("pricing")}
+                      aria-label="Открыть оплату услуг и цены"
+                    >
+                      Оплата услуг
+                      <span className="metric-icon">
+                        <Coins size={19} />
+                      </span>
+                    </button>
+                    <div className="payment-totals">
+                      {(["paid", "free"] as const).map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-label={`Открыть тарифы: ${value === "paid" ? "платные" : "бесплатные"} услуги`}
+                          onClick={() => {
+                            resetFilters();
+                            setSection("pricing");
+                          }}
+                        >
+                          <strong>{number(payments[value])}</strong>
+                          <span>
+                            {value === "paid" ? "Платно" : "Бесплатно"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      className="payment-unknown"
+                      onClick={() => {
+                        resetFilters();
+                        setSection("pricing");
+                      }}
+                    >
+                      Не указано: {number(payments.unknown)}
+                    </button>
+                    <button
+                      className="payment-open"
+                      onClick={() => setSection("pricing")}
+                    >
+                      Тарифы и расчёт <ArrowUpRight size={15} />
+                    </button>
+                  </article>
+                )}
               </section>
+              {store.services.length > metrics.declared && (
+                <p className="registry-note">
+                  В реестре {number(store.services.length)} услуг с учётом работ
+                  и подуслуг. Заявленный показатель {number(metrics.declared)}{" "}
+                  сохранён вручную и не ограничивает реестр.
+                </p>
+              )}
               <div className="analytics-grid">
                 <section className="panel trend-panel">
                   <div className="panel-heading">
@@ -932,7 +991,9 @@ export default function Dashboard({
                         Осталось запустить
                       </span>
                       <strong>
-                        {number(metrics.declared - metrics.working)}
+                        {number(
+                          Math.max(0, metrics.declared - metrics.working),
+                        )}
                       </strong>
                     </div>
                   </div>
@@ -986,6 +1047,16 @@ export default function Dashboard({
                       );
                     },
                   )}
+                  {store.services.some((s) => s.audience === "unknown") && (
+                    <p className="footnote">
+                      Получатели пока не указаны у{" "}
+                      {number(
+                        store.services.filter((s) => s.audience === "unknown")
+                          .length,
+                      )}{" "}
+                      услуг. Они не отнесены к физлицам или юрлицам.
+                    </p>
+                  )}
                   <p className="footnote">
                     {metrics.both == null
                       ? "Укажите число общих услуг в поле «Физ/Юр», чтобы определить отдельные группы. Для этого отчёта оно неизвестно."
@@ -1030,7 +1101,17 @@ export default function Dashboard({
               </div>
             </>
           )}
-          {section === "pricing" && (
+          {section === "pricing" && !admin && (
+            <section className="panel pricing-locked">
+              <LockKeyhole size={28} />
+              <h2>Финансовые данные</h2>
+              <p>Цены и расчёты доступны только администратору.</p>
+              <button className="primary" onClick={() => setLogin(true)}>
+                Войти как администратор
+              </button>
+            </section>
+          )}
+          {section === "pricing" && admin && (
             <PricingPanel
               services={recentServices}
               onEdit={admin ? setEditingService : undefined}
@@ -1091,6 +1172,7 @@ export default function Dashboard({
                   <option value="individual">Только физические лица</option>
                   <option value="business">Только юридические лица</option>
                   <option value="both">Физлица и юрлица</option>
+                  <option value="unknown">Получатели не указаны</option>
                 </select>
                 <select
                   aria-label="Категория услуги"
@@ -1140,6 +1222,8 @@ export default function Dashboard({
                 </p>
               )}
               <ServiceTable
+                admin={admin}
+                onView={setViewingService}
                 services={filtered}
                 onEdit={admin ? setEditingService : undefined}
                 onDelete={admin ? setDeleting : undefined}
@@ -1271,6 +1355,7 @@ export default function Dashboard({
                         <th>На портале</th>
                         <th>Работают</th>
                         <th>Не работают</th>
+                        <th>В работе</th>
                         <th>Физ</th>
                         <th>Юр</th>
                         <th>Физ/Юр</th>
@@ -1307,6 +1392,7 @@ export default function Dashboard({
                               </span>
                             </td>
                             <td>{number(s.metrics.notWorking ?? 0)}</td>
+                            <td>{number(s.metrics.progress ?? 0)}</td>
                             <td>
                               {number(visibleMetrics(s.metrics).individual)}
                             </td>
@@ -1372,6 +1458,37 @@ export default function Dashboard({
             setToast("Вы вошли как администратор.");
           }}
         />
+      )}
+      {viewingService && (
+        <Modal
+          title={viewingService.name}
+          onClose={() => setViewingService(null)}
+          wide
+        >
+          <div className="modal-body">
+            <p>
+              <span className={`status-tag ${viewingService.status}`}>
+                {statusLabels[viewingService.status]}
+              </span>{" "}
+              · {audienceLabels[viewingService.audience]}
+            </p>
+            <WorkDetails service={viewingService} admin={admin} />
+            {admin && (
+              <>
+                <PriceLabel service={viewingService} />
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setEditingService(viewingService);
+                    setViewingService(null);
+                  }}
+                >
+                  Редактировать услугу
+                </button>
+              </>
+            )}
+          </div>
+        </Modal>
       )}
       {fileService && (
         <Modal
@@ -1456,6 +1573,8 @@ export default function Dashboard({
             </div>
             <h3>Реестр на дату отчёта</h3>
             <ServiceTable
+              admin={admin}
+              onView={setViewingService}
               services={servicesByFreshness(
                 detail.services,
                 store.snapshots,
@@ -1502,11 +1621,15 @@ function Empty({ title, text }: { title: string; text: string }) {
 }
 function ServiceTable({
   services,
+  admin = false,
+  onView,
   onEdit,
   onDelete,
   onFiles,
 }: {
   services: Service[];
+  admin?: boolean;
+  onView?: (service: Service) => void;
   onEdit?: (service: Service) => void;
   onDelete?: (service: Service) => void;
   onFiles?: (service: Service) => void;
@@ -1547,10 +1670,10 @@ function ServiceTable({
               .map((s) => (
                 <tr key={s.id}>
                   <td className="service-name">
-                    {onEdit ? (
+                    {onView || onEdit ? (
                       <button
                         className="service-title-button"
-                        onClick={() => onEdit(s)}
+                        onClick={() => (onView ?? onEdit)?.(s)}
                       >
                         {s.name}
                       </button>
@@ -1560,6 +1683,13 @@ function ServiceTable({
                     <span className="service-id" title={s.id}>
                       ID: {s.id}
                     </span>
+                    {s.work && (
+                      <span className="work-preview">
+                        {s.work.todo
+                          ? `Что нужно сделать: ${s.work.todo}`
+                          : s.work.state || "Есть сведения из трекера"}
+                      </span>
+                    )}
                   </td>
                   <td>{s.category || "Без категории"}</td>
                   <td>
@@ -1581,7 +1711,7 @@ function ServiceTable({
                           ? "Бесплатно"
                           : "Не указано"}
                     </span>
-                    <PriceLabel service={s} />
+                    {admin && <PriceLabel service={s} />}
                   </td>
                   {(onEdit || onDelete || onFiles) && (
                     <td className="service-actions">
@@ -1930,7 +2060,7 @@ function Editor({
                     <input
                       required
                       minLength={2}
-                      maxLength={240}
+                      maxLength={1000}
                       value={s.name}
                       placeholder="Название услуги"
                       onChange={(e) => update(i, { name: e.target.value })}
@@ -2012,6 +2142,10 @@ function Editor({
                       onChange={(patch) => update(i, patch)}
                     />
                   )}
+                  <WorkFields
+                    service={s}
+                    onChange={(patch) => update(i, patch)}
+                  />
                 </div>
               ))}
             </div>
@@ -2187,7 +2321,7 @@ function AddService({
             <input
               required
               minLength={2}
-              maxLength={240}
+              maxLength={1000}
               value={service.name}
               onChange={(e) => update({ name: e.target.value })}
               placeholder="Например: Электронная подпись"
@@ -2264,6 +2398,7 @@ function AddService({
           {service.payment === "paid" && (
             <ServicePricingFields service={service} onChange={update} />
           )}
+          <WorkFields service={service} onChange={update} />
           <label className="field">
             Файлы услуги
             <input

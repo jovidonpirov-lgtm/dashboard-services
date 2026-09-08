@@ -73,6 +73,7 @@ export function priceBounds(
   if (service.payment === "free") return { min: 0, max: 0 };
   if (service.payment !== "paid") return null;
   if (service.audiencePricing) {
+    if (service.audience === "unknown") return null;
     const targets =
       audience !== "any"
         ? [audience]

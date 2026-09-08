@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pricingSchema, audiencePricingSchema } from "./pricing";
+import { workSchema } from "./work";
 export const TIMEZONE = "Asia/Dushanbe";
 export function today(now = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -42,12 +43,13 @@ export const serviceSchema = z.object({
     .max(64)
     .optional()
     .transform((id) => id || crypto.randomUUID()),
-  name: z.string().trim().min(2).max(240),
+  name: z.string().trim().min(2).max(1000),
   category: z.enum(serviceCategories).optional(),
   payment: z.enum(["paid", "free"]).optional(),
   pricing: pricingSchema.nullable().optional(),
   audiencePricing: audiencePricingSchema.nullable().optional(),
-  audience: z.enum(["individual", "business", "both"]),
+  work: workSchema.optional(),
+  audience: z.enum(["individual", "business", "both", "unknown"]),
   status: z.enum(["working", "notWorking", "portal", "progress", "planned"]),
 });
 export type Service = z.infer<typeof serviceSchema>;
@@ -58,6 +60,7 @@ export const metricsSchema = z
     portal: count.nullable().default(null),
     working: count,
     notWorking: count.optional(),
+    progress: count.optional(),
     individual: count,
     business: count,
     both: count.nullable().default(null),
@@ -88,13 +91,15 @@ export const metricsSchema = z
 export type Metrics = z.infer<typeof metricsSchema>;
 export function serviceContribution(
   service?: Service,
-): Record<Exclude<keyof Metrics, "notWorking">, number> {
+): Record<Exclude<keyof Metrics, "notWorking" | "progress">, number> {
   return {
     declared: service ? 1 : 0,
     portal: service && ["working", "portal"].includes(service.status) ? 1 : 0,
     working: service?.status === "working" ? 1 : 0,
-    individual: service && service.audience !== "business" ? 1 : 0,
-    business: service && service.audience !== "individual" ? 1 : 0,
+    individual:
+      service && ["individual", "both"].includes(service.audience) ? 1 : 0,
+    business:
+      service && ["business", "both"].includes(service.audience) ? 1 : 0,
     both: service?.audience === "both" ? 1 : 0,
   };
 }
@@ -203,6 +208,7 @@ export const saveSchema = z
       });
   });
 export const audienceLabels = {
+  unknown: "Не указаны",
   individual: "Физ. лица",
   business: "Юр. лица",
   both: "Физ. и юр. лица",
@@ -211,7 +217,7 @@ export const statusLabels = {
   working: "Работает",
   notWorking: "Не работает",
   portal: "На портале, не работает",
-  progress: "В разработке",
+  progress: "В работе",
   planned: "Запланирована",
 };
 export function ordered(snapshots: Snapshot[]) {
@@ -240,6 +246,7 @@ export function servicesByFreshness(
         service.category ?? "",
         service.audience,
         service.status,
+        service.work ?? null,
         service.payment ?? "",
         service.audiencePricing ?? null,
         service.pricing
@@ -291,6 +298,8 @@ export function compare(snapshots: Snapshot[], from: string, to: string) {
                 ? end.metrics.portal - baseline.metrics.portal
                 : null,
             working: end.metrics.working - baseline.metrics.working,
+            progress:
+              (end.metrics.progress ?? 0) - (baseline.metrics.progress ?? 0),
             notWorking:
               (end.metrics.notWorking ?? 0) -
               (baseline.metrics.notWorking ?? 0),
@@ -329,6 +338,9 @@ export function applySave(
     const old = previous.get(s.id);
     return {
       ...s,
+      ...(s.work === undefined && old?.work !== undefined
+        ? { work: old.work }
+        : {}),
       ...(s.pricing === undefined && old?.pricing !== undefined
         ? { pricing: old.pricing }
         : {}),
@@ -424,6 +436,9 @@ export function registryMetrics(
     portal: base.portal,
     ...counts,
     notWorking: services.filter((s) => s.status === "notWorking").length,
+    ...(services.some((s) => s.status === "progress")
+      ? { progress: services.filter((s) => s.status === "progress").length }
+      : {}),
   };
 }
 // Current calculation is separate from legacy report projection. No stored reports are rewritten.
@@ -481,7 +496,39 @@ export const registrySaveSchema = z
       input.services,
     ),
   }))
-  .pipe(saveSchema);
+  // The declared figure is a manually entered target, not a capacity limit for the tracker.
+  // Keep legacy report validation above; current reports derive every other count from services.
+  .pipe(
+    z
+      .object({
+        revision: z.number().int().min(0),
+        date: z.iso
+          .date()
+          .refine((d) => d <= today(), "Нельзя сохранять будущую дату."),
+        note: z.string().trim().min(2).max(500),
+        metrics: z.object({
+          declared: count,
+          portal: count.nullable(),
+          working: count,
+          notWorking: count.optional(),
+          progress: count.optional(),
+          individual: count,
+          business: count,
+          both: count.nullable(),
+        }),
+        services: z.array(serviceSchema).max(10000),
+      })
+      .superRefine((data, ctx) => {
+        if (
+          new Set(data.services.map((s) => s.id.toLowerCase())).size !==
+          data.services.length
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "ID услуг должны быть уникальными.",
+          });
+      }),
+  );
 
 export function matchesRegistryFilters(
   service: Service,
@@ -502,7 +549,7 @@ export function metricFilters(key: keyof Metrics) {
     status:
       key === "portal"
         ? "onPortal"
-        : key === "working" || key === "notWorking"
+        : key === "working" || key === "notWorking" || key === "progress"
           ? key
           : "all",
     audience:

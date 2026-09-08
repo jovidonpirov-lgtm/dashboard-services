@@ -197,7 +197,9 @@ export function ServicePricingFields({
   const targets =
     service.audience === "both"
       ? (["individual", "business"] as const)
-      : [service.audience];
+      : service.audience === "unknown"
+        ? []
+        : [service.audience];
   return (
     <div className="service-pricing-fields">
       {service.audience === "both" && (
@@ -276,7 +278,9 @@ function priceTargets(
     ? [audience]
     : service.audience === "both"
       ? ["individual", "business"]
-      : [service.audience];
+      : service.audience === "unknown"
+        ? []
+        : [service.audience];
 }
 function AudiencePriceColumn({
   service,
