@@ -1,6 +1,7 @@
 "use client";
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -45,6 +46,7 @@ import {
   metricFilters,
   matchesRegistryFilters,
   registrySaveSchema,
+  servicesByFreshness,
   audienceBreakdown,
   serviceCategories,
   serviceSchema,
@@ -456,7 +458,11 @@ export default function Dashboard({
   const completion = metrics.declared
     ? Math.round((metrics.working / metrics.declared) * 100)
     : 0;
-  const filtered = store.services.filter(
+  const recentServices = useMemo(
+    () => servicesByFreshness(store.services, store.snapshots, latest?.id),
+    [store.services, store.snapshots, latest?.id],
+  );
+  const filtered = recentServices.filter(
     (s) =>
       (s.name + " " + s.id)
         .toLowerCase()
@@ -1423,7 +1429,13 @@ export default function Dashboard({
               ))}
             </div>
             <h3>Реестр на дату отчёта</h3>
-            <ServiceTable services={detail.services} />
+            <ServiceTable
+              services={servicesByFreshness(
+                detail.services,
+                store.snapshots,
+                detail.id,
+              )}
+            />
             {!detail.services.length && (
               <p className="muted">В этом отчёте реестр не заполнен.</p>
             )}
@@ -1480,6 +1492,9 @@ function ServiceTable({
   const currentPage = Math.min(page, pages - 1);
   return (
     <>
+      <p className="registry-note">
+        Сначала недавно добавленные и изменённые услуги
+      </p>
       <div
         className="table-scroll"
         tabIndex={0}

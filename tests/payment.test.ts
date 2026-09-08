@@ -24,6 +24,7 @@ test("editing payment preserves IDs, other services, manual facts, counts and pr
   let store = demoStore();
   const original = structuredClone(store);
   const latest = store.snapshots.at(-1)!;
+  let savedAt = Date.parse(latest.createdAt);
   for (const payment of ["paid", "free", undefined] as const) {
     const services = store.services.map((s, index) =>
       index === 0 ? { ...s, payment } : s,
@@ -39,7 +40,7 @@ test("editing payment preserves IDs, other services, manual facts, counts and pr
       store,
       input,
       `payment-${payment}`,
-      new Date().toISOString(),
+      new Date((savedAt += 1000)).toISOString(),
     );
     assert.equal(store.services[0].payment, payment);
     assert.equal(store.services[0].id, original.services[0].id);

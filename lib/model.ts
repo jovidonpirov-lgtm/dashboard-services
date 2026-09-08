@@ -217,6 +217,39 @@ export function ordered(snapshots: Snapshot[]) {
       a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt),
   );
 }
+// Infer recency from saved versions without adding timestamps or rewriting services.
+export function servicesByFreshness(
+  services: Service[],
+  snapshots: Snapshot[],
+  snapshotId?: string,
+): Service[] {
+  const history = ordered(snapshots);
+  const end = snapshotId
+    ? history.findIndex((s) => s.id === snapshotId)
+    : history.length - 1;
+  const lastChange = new Map<string, number>();
+  let previous = new Map<string, string>();
+  for (let index = 0; index <= end; index++) {
+    const current = new Map<string, string>();
+    for (const service of history[index].services) {
+      const signature = JSON.stringify([
+        service.name,
+        service.category ?? "",
+        service.audience,
+        service.status,
+        service.payment ?? "",
+      ]);
+      current.set(service.id, signature);
+      if (previous.get(service.id) !== signature)
+        lastChange.set(service.id, index);
+    }
+    previous = current;
+  }
+  // Stable ties retain original order for services changed in the same report.
+  return [...services].sort(
+    (a, b) => (lastChange.get(b.id) ?? -1) - (lastChange.get(a.id) ?? -1),
+  );
+}
 export function asOf(snapshots: Snapshot[], date: string) {
   return ordered(snapshots)
     .filter((s) => s.date <= date)
