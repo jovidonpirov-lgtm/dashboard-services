@@ -27,6 +27,31 @@ export const pricingSchema = z
     { message: "Стоимость услуги не должна превышать 1 млрд сомони." },
   );
 export type Pricing = z.infer<typeof pricingSchema>;
+export const audiencePricingSchema = z.object({
+  individual: pricingSchema.nullable(),
+  business: pricingSchema.nullable(),
+});
+export type PriceAudience = "any" | "individual" | "business";
+type PriceService = Pick<Service, "payment" | "pricing"> &
+  Partial<Pick<Service, "audience" | "audiencePricing">>;
+export function supportsPriceAudience(
+  service: Pick<Service, "audience">,
+  audience: PriceAudience,
+) {
+  return (
+    audience === "any" ||
+    service.audience === "both" ||
+    service.audience === audience
+  );
+}
+export function tariffFor(
+  service: PriceService,
+  audience: "individual" | "business",
+) {
+  return service.audiencePricing
+    ? service.audiencePricing[audience]
+    : service.pricing;
+}
 export const money = (value: number | null) =>
   value === null
     ? "—"
@@ -37,10 +62,36 @@ export const money = (value: number | null) =>
 export const roundMoney = (value: number) =>
   Math.round((value + Number.EPSILON) * 100) / 100;
 export function priceBounds(
-  service: Pick<Service, "payment" | "pricing">,
+  service: PriceService,
+  audience: PriceAudience = "any",
 ): { min: number; max: number } | null {
+  if (
+    service.audience &&
+    !supportsPriceAudience({ audience: service.audience }, audience)
+  )
+    return null;
   if (service.payment === "free") return { min: 0, max: 0 };
   if (service.payment !== "paid") return null;
+  if (service.audiencePricing) {
+    const targets =
+      audience !== "any"
+        ? [audience]
+        : service.audience && service.audience !== "both"
+          ? [service.audience]
+          : (["individual", "business"] as const);
+    const bounds = targets.map((a) =>
+      priceBounds({
+        payment: "paid",
+        pricing: tariffFor(service, a as "individual" | "business"),
+      }),
+    );
+    // A missing audience tariff cannot be treated as zero or replaced by the other audience's price.
+    if (bounds.some((b) => !b)) return null;
+    return {
+      min: Math.min(...bounds.map((b) => b!.min)),
+      max: Math.max(...bounds.map((b) => b!.max)),
+    };
+  }
   const parsed = pricingSchema.safeParse(service.pricing);
   if (!parsed.success) return null;
   const p = parsed.data;
@@ -63,7 +114,10 @@ export function priceBasis(pricing: Pricing) {
       ? "Фиксированная цена"
       : "Диапазон цены";
 }
-export function pricingSummary(services: Service[]) {
+export function pricingSummary(
+  services: Service[],
+  audience: PriceAudience = "any",
+) {
   let minCents = 0,
     maxCents = 0,
     priced = 0,
@@ -71,6 +125,7 @@ export function pricingSummary(services: Service[]) {
     free = 0,
     unknown = 0;
   for (const service of services) {
+    if (!supportsPriceAudience(service, audience)) continue;
     if (service.payment === "free") {
       free++;
       continue;
@@ -79,7 +134,7 @@ export function pricingSummary(services: Service[]) {
       unknown++;
       continue;
     }
-    const bounds = priceBounds(service);
+    const bounds = priceBounds(service, audience);
     if (!bounds) {
       missing++;
       continue;
@@ -107,6 +162,7 @@ export function revenueScenario(
   services: Service[],
   quantity: number,
   commission: number,
+  audience: PriceAudience = "any",
 ) {
   if (
     !Number.isInteger(quantity) ||
@@ -117,7 +173,7 @@ export function revenueScenario(
     commission > 100
   )
     return null;
-  const totals = pricingSummary(services);
+  const totals = pricingSummary(services, audience);
   if (
     totals.max !== null &&
     totals.max * quantity * commission > Number.MAX_SAFE_INTEGER

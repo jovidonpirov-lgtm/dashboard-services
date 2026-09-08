@@ -2779,6 +2779,24 @@ td:nth-child(2) {
   font-size: 15px;
   font-weight: 600;
 }
+.service-pricing-fields {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.audience-price-lines {
+  display: grid;
+  gap: 12px;
+}
+.audience-price-lines > span {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.audience-price-lines small {
+  color: #60717a;
+  font-weight: 400;
+  font-size: 12px;
+}
 .price-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

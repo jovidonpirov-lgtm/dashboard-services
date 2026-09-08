@@ -1,5 +1,5 @@
 "use client";
-import { PricingFields, PricingPanel, PriceLabel } from "./pricing";
+import { ServicePricingFields, PricingPanel, PriceLabel } from "./pricing";
 import {
   useEffect,
   useMemo,
@@ -1913,6 +1913,10 @@ function Editor({
                           payment: (e.target.value ||
                             undefined) as Service["payment"],
                           pricing: e.target.value === "paid" ? s.pricing : null,
+                          audiencePricing:
+                            e.target.value === "paid"
+                              ? s.audiencePricing
+                              : null,
                         })
                       }
                     >
@@ -2003,9 +2007,9 @@ function Editor({
                     </select>
                   </label>
                   {s.payment === "paid" && (
-                    <PricingFields
-                      value={s.pricing}
-                      onChange={(pricing) => update(i, { pricing })}
+                    <ServicePricingFields
+                      service={s}
+                      onChange={(patch) => update(i, patch)}
                     />
                   )}
                 </div>
@@ -2244,6 +2248,8 @@ function AddService({
                 update({
                   payment: (e.target.value || undefined) as Service["payment"],
                   pricing: e.target.value === "paid" ? service.pricing : null,
+                  audiencePricing:
+                    e.target.value === "paid" ? service.audiencePricing : null,
                 })
               }
             >
@@ -2256,10 +2262,7 @@ function AddService({
             </small>
           </label>
           {service.payment === "paid" && (
-            <PricingFields
-              value={service.pricing}
-              onChange={(pricing) => update({ pricing })}
-            />
+            <ServicePricingFields service={service} onChange={update} />
           )}
           <label className="field">
             Файлы услуги

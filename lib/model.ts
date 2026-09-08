@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pricingSchema } from "./pricing";
+import { pricingSchema, audiencePricingSchema } from "./pricing";
 export const TIMEZONE = "Asia/Dushanbe";
 export function today(now = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -46,6 +46,7 @@ export const serviceSchema = z.object({
   category: z.enum(serviceCategories).optional(),
   payment: z.enum(["paid", "free"]).optional(),
   pricing: pricingSchema.nullable().optional(),
+  audiencePricing: audiencePricingSchema.nullable().optional(),
   audience: z.enum(["individual", "business", "both"]),
   status: z.enum(["working", "notWorking", "portal", "progress", "planned"]),
 });
@@ -240,6 +241,7 @@ export function servicesByFreshness(
         service.audience,
         service.status,
         service.payment ?? "",
+        service.audiencePricing ?? null,
         service.pricing
           ? [
               service.pricing.kind,
@@ -324,10 +326,16 @@ export function applySave(
     (asOf(store.snapshots, input.date)?.services ?? []).map((s) => [s.id, s]),
   );
   const services = input.services.map((s) => {
-    const pricing = previous.get(s.id)?.pricing;
-    return s.pricing === undefined && pricing !== undefined
-      ? { ...s, pricing }
-      : s;
+    const old = previous.get(s.id);
+    return {
+      ...s,
+      ...(s.pricing === undefined && old?.pricing !== undefined
+        ? { pricing: old.pricing }
+        : {}),
+      ...(s.audiencePricing === undefined && old?.audiencePricing !== undefined
+        ? { audiencePricing: old.audiencePricing }
+        : {}),
+    };
   });
   const snapshots = [
     ...store.snapshots,

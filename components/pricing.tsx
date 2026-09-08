@@ -12,14 +12,19 @@ import {
   pricingSummary,
   revenueScenario,
   type Pricing,
+  type PriceAudience,
+  supportsPriceAudience,
+  tariffFor,
 } from "@/lib/pricing";
 
 export function PricingFields({
   value,
   onChange,
+  label = "Тариф услуги",
 }: {
   value: Service["pricing"];
   onChange: (value: Service["pricing"]) => void;
+  label?: string;
 }) {
   const kind = value?.kind ?? "unknown";
   const numeric = (raw: string) => (raw === "" ? NaN : Number(raw));
@@ -29,7 +34,7 @@ export function PricingFields({
   const preview = priceBounds({ payment: "paid", pricing: value });
   return (
     <fieldset className="pricing-fields">
-      <legend>Тариф услуги</legend>
+      <legend>{label}</legend>
       <div className="price-form-grid">
         <label className="field">
           Тип цены
@@ -181,10 +186,139 @@ export function PricingFields({
   );
 }
 
+export function ServicePricingFields({
+  service,
+  onChange,
+}: {
+  service: Service;
+  onChange: (patch: Partial<Service>) => void;
+}) {
+  const separate = !!service.audiencePricing;
+  const targets =
+    service.audience === "both"
+      ? (["individual", "business"] as const)
+      : [service.audience];
+  return (
+    <div className="service-pricing-fields">
+      {service.audience === "both" && (
+        <label className="field">
+          Цены для получателей
+          <select
+            value={separate ? "separate" : "common"}
+            onChange={(e) =>
+              onChange({
+                audiencePricing:
+                  e.target.value === "separate"
+                    ? { individual: null, business: null }
+                    : null,
+              })
+            }
+          >
+            <option value="common">Одна цена для физлиц и юрлиц</option>
+            <option value="separate">Разные цены для физлиц и юрлиц</option>
+          </select>
+          <small>
+            Услуга остаётся одной. Каждый тариф может быть фиксированным,
+            диапазоном или в показателях.
+          </small>
+        </label>
+      )}
+      {separate ? (
+        <>
+          <p className="footnote">
+            Тарифы заполняются независимо.{" "}
+            {service.pricing
+              ? "Ранее введённая общая цена сохранена: она снова будет применяться при выборе общей цены."
+              : "Если цена одной аудитории неизвестна, оставьте её незаполненной."}
+          </p>
+          {targets.map((a) => (
+            <PricingFields
+              key={a}
+              label={
+                a === "individual"
+                  ? "Тариф для физических лиц"
+                  : "Тариф для юридических лиц"
+              }
+              value={service.audiencePricing![a]}
+              onChange={(pricing) =>
+                onChange({
+                  audiencePricing: {
+                    ...service.audiencePricing!,
+                    [a]: pricing ?? null,
+                  },
+                })
+              }
+            />
+          ))}
+        </>
+      ) : (
+        <PricingFields
+          value={service.pricing}
+          onChange={(pricing) => onChange({ pricing })}
+        />
+      )}
+    </div>
+  );
+}
+
+function priceText(bounds: ReturnType<typeof priceBounds>) {
+  return bounds
+    ? bounds.min === bounds.max
+      ? money(bounds.min)
+      : `${money(bounds.min)} – ${money(bounds.max)}`
+    : "Цена не указана";
+}
+function priceTargets(
+  service: Service,
+  audience: PriceAudience,
+): ("individual" | "business")[] {
+  return audience !== "any"
+    ? [audience]
+    : service.audience === "both"
+      ? ["individual", "business"]
+      : [service.audience];
+}
+function AudiencePriceColumn({
+  service,
+  audience,
+  bound,
+}: {
+  service: Service;
+  audience: PriceAudience;
+  bound: "min" | "max";
+}) {
+  if (!service.audiencePricing || service.payment !== "paid")
+    return <>{money(priceBounds(service, audience)?.[bound] ?? null)}</>;
+  return (
+    <div className="audience-price-lines">
+      {priceTargets(service, audience).map((a) => (
+        <span key={a}>
+          <small>{a === "individual" ? "Физ" : "Юр"}</small>
+          {money(priceBounds(service, a)?.[bound] ?? null)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function PriceLabel({ service }: { service: Service }) {
   const bounds = priceBounds(service);
   if (service.payment === "free")
     return <span className="price-label">0 с.</span>;
+  if (service.payment === "paid" && service.audiencePricing)
+    return (
+      <span className="price-label">
+        {priceTargets(service, "any").map((a) => (
+          <span key={a}>
+            <small>{a === "individual" ? "Физ: " : "Юр: "}</small>
+            <strong>{priceText(priceBounds(service, a))}</strong>
+            <small className="pricing-service-meta">
+              {tariffFor(service, a) && priceBasis(tariffFor(service, a)!)}
+            </small>
+          </span>
+        ))}
+      </span>
+    );
   if (!bounds)
     return <span className="price-label muted">Цена не указана</span>;
   return (
@@ -212,28 +346,31 @@ export function PricingPanel({
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [priceAudience, setPriceAudience] = useState<PriceAudience>("any");
   const [workingOnly, setWorkingOnly] = useState(false);
   const [page, setPage] = useState(0);
   const [quantity, setQuantity] = useState("1");
   const [commission, setCommission] = useState("10");
   const filtered = paidFirst(services).filter(
     (s) =>
+      supportsPriceAudience(s, priceAudience) &&
       (!workingOnly || s.status === "working") &&
       `${s.name} ${s.id}`
         .toLocaleLowerCase()
         .includes(query.trim().toLocaleLowerCase()) &&
       (filter === "all" ||
         (filter === "missing"
-          ? s.payment === "paid" && !priceBounds(s)
+          ? s.payment === "paid" && !priceBounds(s, priceAudience)
           : filter === "unknown"
             ? !s.payment
             : s.payment === filter)),
   );
-  const summary = pricingSummary(filtered);
+  const summary = pricingSummary(filtered, priceAudience);
   const scenario = revenueScenario(
     filtered,
     quantity === "" ? NaN : Number(quantity),
     commission === "" ? NaN : Number(commission),
+    priceAudience,
   );
   const pages = Math.max(1, Math.ceil(filtered.length / 25));
   const activePage = Math.min(page, pages - 1);
@@ -279,6 +416,18 @@ export function PricingPanel({
             <option value="free">Бесплатные</option>
             <option value="unknown">Оплата не указана</option>
           </select>
+          <select
+            aria-label="Аудитория для расчёта цены"
+            value={priceAudience}
+            onChange={(e) => {
+              setPriceAudience(e.target.value as PriceAudience);
+              setPage(0);
+            }}
+          >
+            <option value="any">Все аудитории · диапазон тарифов</option>
+            <option value="individual">Тарифы для физических лиц</option>
+            <option value="business">Тарифы для юридических лиц</option>
+          </select>
           <label className="pricing-check">
             <input
               type="checkbox"
@@ -301,7 +450,11 @@ export function PricingPanel({
         <article>
           <span>Сумма максимальных цен</span>
           <strong>{money(summary.max)}</strong>
-          <small>У фиксированной цены минимум = максимум</small>
+          <small>
+            {priceAudience === "any"
+              ? "С учётом тарифов обеих аудиторий"
+              : "По тарифам выбранной аудитории"}
+          </small>
         </article>
         <article>
           <span>Заполнение тарифов</span>
@@ -325,12 +478,15 @@ export function PricingPanel({
         Суммы рассчитаны по текущему фильтру: по одному обращению к каждой
         платной услуге с заполненным тарифом. Это стоимость набора услуг, а не
         фактическая выручка. Услуга «Физ/Юр» учитывается один раз.
+        {priceAudience === "any"
+          ? " Для разных тарифов минимум — меньшая цена двух аудиторий, максимум — большая. Если один тариф не заполнен, услуга исключена из общей суммы."
+          : ` Выбран тариф для ${priceAudience === "individual" ? "физических" : "юридических"} лиц, включая услуги «Физ/Юр».`}
       </p>
       {(summary.missing > 0 || summary.unknown > 0) && (
         <p className="pricing-notice">
-          Расчёт неполный: у {summary.missing} платных услуг нет цены, у{" "}
-          {summary.unknown} услуг не указан тип оплаты. Они не включены в
-          денежные суммы.
+          Расчёт неполный: у {summary.missing} платных услуг не заполнены нужные
+          тарифы, у {summary.unknown} услуг не указан тип оплаты. Они не
+          включены в денежные суммы.
         </p>
       )}
       <details className="panel pricing-calculator">
@@ -418,7 +574,7 @@ export function PricingPanel({
               {filtered
                 .slice(activePage * 25, (activePage + 1) * 25)
                 .map((s) => {
-                  const bounds = priceBounds(s);
+                  const bounds = priceBounds(s, priceAudience);
                   return (
                     <tr key={s.id}>
                       <td className="service-name">
@@ -448,26 +604,48 @@ export function PricingPanel({
                           {s.payment === "free"
                             ? "Бесплатно"
                             : s.payment === "paid"
-                              ? s.pricing
-                                ? s.pricing.kind === "fixed"
-                                  ? "Фиксированная"
-                                  : "Диапазон"
-                                : "Цена не указана"
+                              ? s.audiencePricing
+                                ? "По аудиториям"
+                                : s.pricing
+                                  ? s.pricing.kind === "fixed"
+                                    ? "Фиксированная"
+                                    : "Диапазон"
+                                  : "Цена не указана"
                               : "Оплата не указана"}
                         </span>
-                        {s.payment === "paid" && s.pricing && (
-                          <small className="pricing-service-meta">
-                            {s.pricing.unit === "indicator"
-                              ? priceBasis(s.pricing)
-                              : "В сомони"}
-                          </small>
-                        )}
+                        {s.payment === "paid" &&
+                          !s.audiencePricing &&
+                          s.pricing && (
+                            <small className="pricing-service-meta">
+                              {s.pricing.unit === "indicator"
+                                ? priceBasis(s.pricing)
+                                : "В сомони"}
+                            </small>
+                          )}
+                        {s.payment === "paid" &&
+                          s.audiencePricing &&
+                          priceTargets(s, priceAudience).map((a) => (
+                            <small className="pricing-service-meta" key={a}>
+                              {a === "individual" ? "Физ" : "Юр"}:{" "}
+                              {tariffFor(s, a)
+                                ? priceBasis(tariffFor(s, a)!)
+                                : "Цена не указана"}
+                            </small>
+                          ))}
                       </td>
                       <td className="price-number">
-                        {money(bounds?.min ?? null)}
+                        <AudiencePriceColumn
+                          service={s}
+                          audience={priceAudience}
+                          bound="min"
+                        />
                       </td>
                       <td className="price-number">
-                        {money(bounds?.max ?? null)}
+                        <AudiencePriceColumn
+                          service={s}
+                          audience={priceAudience}
+                          bound="max"
+                        />
                       </td>
                       <td>
                         <div className="pricing-actions">
