@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pricingSchema } from "./pricing";
 export const TIMEZONE = "Asia/Dushanbe";
 export function today(now = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -44,6 +45,7 @@ export const serviceSchema = z.object({
   name: z.string().trim().min(2).max(240),
   category: z.enum(serviceCategories).optional(),
   payment: z.enum(["paid", "free"]).optional(),
+  pricing: pricingSchema.nullable().optional(),
   audience: z.enum(["individual", "business", "both"]),
   status: z.enum(["working", "notWorking", "portal", "progress", "planned"]),
 });
@@ -238,6 +240,17 @@ export function servicesByFreshness(
         service.audience,
         service.status,
         service.payment ?? "",
+        service.pricing
+          ? [
+              service.pricing.kind,
+              service.pricing.unit,
+              service.pricing.indicatorRate,
+              service.pricing.kind === "fixed"
+                ? service.pricing.amount
+                : service.pricing.min,
+              service.pricing.kind === "range" ? service.pricing.max : null,
+            ]
+          : null,
       ]);
       current.set(service.id, signature);
       if (previous.get(service.id) !== signature)
@@ -306,6 +319,16 @@ export function applySave(
   createdAt: string,
 ): Store {
   if (store.revision !== input.revision) throw new Error("CONFLICT");
+  // Older open tabs do not know about pricing. Omission preserves it; null explicitly clears it.
+  const previous = new Map(
+    (asOf(store.snapshots, input.date)?.services ?? []).map((s) => [s.id, s]),
+  );
+  const services = input.services.map((s) => {
+    const pricing = previous.get(s.id)?.pricing;
+    return s.pricing === undefined && pricing !== undefined
+      ? { ...s, pricing }
+      : s;
+  });
   const snapshots = [
     ...store.snapshots,
     {
@@ -314,7 +337,7 @@ export function applySave(
       date: input.date,
       note: input.note,
       metrics: input.metrics,
-      services: input.services,
+      services,
     },
   ];
   return {

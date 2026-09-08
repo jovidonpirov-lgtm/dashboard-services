@@ -1,4 +1,5 @@
 "use client";
+import { PricingFields, PricingPanel, PriceLabel } from "./pricing";
 import {
   useEffect,
   useMemo,
@@ -23,6 +24,7 @@ import {
   CircleHelp,
   Clock3,
   FileClock,
+  Coins,
   Layers3,
   LayoutDashboard,
   ListFilter,
@@ -92,6 +94,7 @@ const metricLabels: Record<keyof Metrics, string> = {
 const sections = {
   overview: "Обзор",
   services: "Реестр услуг",
+  pricing: "Оплата услуг",
   history: "История изменений",
 };
 type Section = keyof typeof sections;
@@ -428,7 +431,9 @@ export default function Dashboard({
     const restore = () => {
       const value = window.location.hash.slice(1);
       updateSection(
-        value === "services" || value === "history" ? value : "overview",
+        value === "services" || value === "history" || value === "pricing"
+          ? value
+          : "overview",
       );
     };
     restore();
@@ -557,7 +562,9 @@ export default function Dashboard({
                 ? LayoutDashboard
                 : key === "services"
                   ? Layers3
-                  : FileClock;
+                  : key === "pricing"
+                    ? Coins
+                    : FileClock;
             return (
               <button
                 key={key}
@@ -634,7 +641,9 @@ export default function Dashboard({
                   ? "От заявленных планов — к работающим сервисам."
                   : section === "services"
                     ? "Услуги, их аудитории и текущий статус запуска."
-                    : "Все обновления и изменения показателей в одном месте."}
+                    : section === "pricing"
+                      ? "Стоимость услуг и сценарии дохода на основе заполненных тарифов."
+                      : "Все обновления и изменения показателей в одном месте."}
               </p>
             </div>
             <div className="heading-actions">
@@ -755,22 +764,26 @@ export default function Dashboard({
                   className="metric-card payment-card"
                   aria-label="Оплата услуг"
                 >
-                  <div className="metric-label">
+                  <button
+                    type="button"
+                    className="metric-label payment-heading"
+                    onClick={() => setSection("pricing")}
+                    aria-label="Открыть оплату услуг и цены"
+                  >
                     Оплата услуг
                     <span className="metric-icon">
-                      <Layers3 size={19} />
+                      <Coins size={19} />
                     </span>
-                  </div>
+                  </button>
                   <div className="payment-totals">
                     {(["paid", "free"] as const).map((value) => (
                       <button
                         key={value}
                         type="button"
-                        aria-label={`Просмотреть ${value === "paid" ? "платные" : "бесплатные"} услуги`}
+                        aria-label={`Открыть тарифы: ${value === "paid" ? "платные" : "бесплатные"} услуги`}
                         onClick={() => {
                           resetFilters();
-                          setPayment(value);
-                          setSection("services");
+                          setSection("pricing");
                         }}
                       >
                         <strong>{number(payments[value])}</strong>
@@ -782,11 +795,16 @@ export default function Dashboard({
                     className="payment-unknown"
                     onClick={() => {
                       resetFilters();
-                      setPayment("unknown");
-                      setSection("services");
+                      setSection("pricing");
                     }}
                   >
                     Не указано: {number(payments.unknown)}
+                  </button>
+                  <button
+                    className="payment-open"
+                    onClick={() => setSection("pricing")}
+                  >
+                    Тарифы и расчёт <ArrowUpRight size={15} />
                   </button>
                 </article>
               </section>
@@ -1011,6 +1029,14 @@ export default function Dashboard({
                 </section>
               </div>
             </>
+          )}
+          {section === "pricing" && (
+            <PricingPanel
+              services={recentServices}
+              onEdit={admin ? setEditingService : undefined}
+              onLogin={() => setLogin(true)}
+              onFiles={(service) => setFileService({ service })}
+            />
           )}
           {section === "services" && (
             <section className="panel registry">
@@ -1555,6 +1581,7 @@ function ServiceTable({
                           ? "Бесплатно"
                           : "Не указано"}
                     </span>
+                    <PriceLabel service={s} />
                   </td>
                   {(onEdit || onDelete || onFiles) && (
                     <td className="service-actions">
@@ -1885,6 +1912,7 @@ function Editor({
                         update(i, {
                           payment: (e.target.value ||
                             undefined) as Service["payment"],
+                          pricing: e.target.value === "paid" ? s.pricing : null,
                         })
                       }
                     >
@@ -1974,6 +2002,12 @@ function Editor({
                       ))}
                     </select>
                   </label>
+                  {s.payment === "paid" && (
+                    <PricingFields
+                      value={s.pricing}
+                      onChange={(pricing) => update(i, { pricing })}
+                    />
+                  )}
                 </div>
               ))}
             </div>
@@ -2100,7 +2134,7 @@ function AddService({
     }
     const parsedService = serviceSchema.safeParse(service);
     if (!parsedService.success) {
-      setError("Введите название услуги и проверьте остальные поля.");
+      setError(parsedService.error.issues[0].message);
       return;
     }
     const input = registrySaveSchema.safeParse({
@@ -2209,6 +2243,7 @@ function AddService({
               onChange={(e) =>
                 update({
                   payment: (e.target.value || undefined) as Service["payment"],
+                  pricing: e.target.value === "paid" ? service.pricing : null,
                 })
               }
             >
@@ -2220,6 +2255,12 @@ function AddService({
               Можно заполнить позже. Это свойство не влияет на количество услуг.
             </small>
           </label>
+          {service.payment === "paid" && (
+            <PricingFields
+              value={service.pricing}
+              onChange={(pricing) => update({ pricing })}
+            />
+          )}
           <label className="field">
             Файлы услуги
             <input
