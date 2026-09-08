@@ -44,6 +44,7 @@ export const serviceSchema = z.object({
     .optional()
     .transform((id) => id || crypto.randomUUID()),
   name: z.string().trim().min(2).max(1000),
+  registryId: z.string().trim().max(200).nullable().optional(),
   category: z.enum(serviceCategories).optional(),
   payment: z.enum(["paid", "free"]).optional(),
   pricing: pricingSchema.nullable().optional(),
@@ -243,6 +244,7 @@ export function servicesByFreshness(
     for (const service of history[index].services) {
       const signature = JSON.stringify([
         service.name,
+        service.registryId ?? null,
         service.category ?? "",
         service.audience,
         service.status,
@@ -338,6 +340,9 @@ export function applySave(
     const old = previous.get(s.id);
     return {
       ...s,
+      ...(s.registryId === undefined && old?.registryId !== undefined
+        ? { registryId: old.registryId }
+        : {}),
       ...(s.work === undefined && old?.work !== undefined
         ? { work: old.work }
         : {}),

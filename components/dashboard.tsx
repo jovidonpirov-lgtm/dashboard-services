@@ -2,6 +2,7 @@
 import { ServicePricingFields, PricingPanel, PriceLabel } from "./pricing";
 import { WorkFields, WorkDetails } from "./service-work";
 import { publicStore } from "@/lib/public-data";
+import { registryIdFor } from "@/lib/service-identity";
 import {
   useEffect,
   useMemo,
@@ -501,7 +502,7 @@ export default function Dashboard({
   );
   const filtered = recentServices.filter(
     (s) =>
-      (s.name + " " + s.id)
+      (s.name + " " + registryIdFor(s) + " " + s.id)
         .toLowerCase()
         .includes(query.trim().toLowerCase()) &&
       (payment === "all" ||
@@ -1472,6 +1473,9 @@ export default function Dashboard({
               </span>{" "}
               · {audienceLabels[viewingService.audience]}
             </p>
+            <p className="service-id">
+              ID реестра: {registryIdFor(viewingService) || "Не указан"}
+            </p>
             <WorkDetails service={viewingService} admin={admin} />
             {admin && (
               <>
@@ -1680,8 +1684,11 @@ function ServiceTable({
                     ) : (
                       s.name
                     )}
-                    <span className="service-id" title={s.id}>
-                      ID: {s.id}
+                    <span
+                      className="service-id"
+                      title={registryIdFor(s) || undefined}
+                    >
+                      ID реестра: {registryIdFor(s) || "Не указан"}
                     </span>
                     {s.work && (
                       <span className="work-preview">
@@ -2023,15 +2030,14 @@ function Editor({
               {services.map((s, i) => (
                 <div className="service-editor-row" key={i}>
                   <label className="field">
-                    ID (необязательно)
+                    ID реестра (необязательно)
                     <input
-                      maxLength={64}
-                      readOnly={store.services.some(
-                        (existing) => existing.id === s.id,
-                      )}
-                      value={s.id}
-                      placeholder="Авто"
-                      onChange={(e) => update(i, { id: e.target.value })}
+                      maxLength={200}
+                      value={registryIdFor(s)}
+                      placeholder="ID из реестра"
+                      onChange={(e) =>
+                        update(i, { registryId: e.target.value || null })
+                      }
                     />
                   </label>
                   <label className="field">
@@ -2416,14 +2422,14 @@ function AddService({
             </small>
           </label>
           <label className="field">
-            ID (необязательно)
+            ID реестра (необязательно)
             <input
-              maxLength={64}
-              readOnly={!!initialService}
-              value={service.id}
-              onChange={(e) => update({ id: e.target.value })}
-              placeholder="Создаётся автоматически"
+              maxLength={200}
+              value={registryIdFor(service)}
+              onChange={(e) => update({ registryId: e.target.value || null })}
+              placeholder="Например: 000047"
             />
+            <small>У разных подуслуг может быть одинаковый ID реестра.</small>
           </label>
           <p className="footnote">
             После сохранения: заявлено {number(totals.declared)}, на портале{" "}
